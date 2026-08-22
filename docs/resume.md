@@ -10,11 +10,14 @@ chat response.
 
 - Designed an OpenAI-compatible FastAPI service used by desktop and mobile chat clients.
 - Implemented a two-stage LLM pipeline that separates narrative generation from structured visual
-  prompt planning, improving alignment between story events and generated scenes.
+  direction across identity, action, camera, lighting, and material fields, improving alignment
+  between story events and generated scenes.
 - Integrated ComfyUI's queue, history, and image APIs with a Core-node SDXL workflow optimized for
   an 8 GB NVIDIA GPU using batch size one and tiled VAE decoding.
 - Added command-driven and automatic illustration modes, state persistence, WebP delivery, bearer
   authentication, and private-device access through Tailscale Serve.
+- Added robust visual-plan parsing, single-frame composition constraints, and an opt-in low-denoise
+  detected-face refinement path while preserving a dependency-light Core default.
 - Standardized configuration, tests, linting, CI, security documentation, and reproducible Windows
   setup while keeping model weights and user data outside source control.
 

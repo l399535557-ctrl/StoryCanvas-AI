@@ -109,6 +109,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "comfyui_ok": comfy_ok,
                 "device": device,
                 "auto_image": state.auto_image,
+                "face_detailer": {
+                    "enabled": cfg.face_detailer_enabled,
+                    "model": cfg.face_detailer_model if cfg.face_detailer_enabled else None,
+                },
             }
         )
 

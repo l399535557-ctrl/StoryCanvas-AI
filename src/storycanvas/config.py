@@ -43,6 +43,17 @@ class Settings:
     image_sampler: str
     image_scheduler: str
     image_timeout_seconds: int
+    face_detailer_enabled: bool
+    face_detailer_model: str
+    face_detailer_guide_size: int
+    face_detailer_max_size: int
+    face_detailer_steps: int
+    face_detailer_cfg: float
+    face_detailer_denoise: float
+    face_detailer_threshold: float
+    face_detailer_dilation: int
+    face_detailer_crop_factor: float
+    face_detailer_feather: int
     auto_image_default: bool
     story_profile_path: Path
     generated_images_dir: Path
@@ -72,6 +83,19 @@ class Settings:
             image_sampler=os.getenv("IMAGE_SAMPLER", "dpmpp_2m").strip(),
             image_scheduler=os.getenv("IMAGE_SCHEDULER", "karras").strip(),
             image_timeout_seconds=_as_int("IMAGE_TIMEOUT_SECONDS", 360),
+            face_detailer_enabled=_as_bool("FACE_DETAILER_ENABLED", False),
+            face_detailer_model=os.getenv(
+                "FACE_DETAILER_MODEL", "bbox/face_yolov8m.pt"
+            ).strip(),
+            face_detailer_guide_size=_as_int("FACE_DETAILER_GUIDE_SIZE", 576),
+            face_detailer_max_size=_as_int("FACE_DETAILER_MAX_SIZE", 768),
+            face_detailer_steps=_as_int("FACE_DETAILER_STEPS", 12),
+            face_detailer_cfg=_as_float("FACE_DETAILER_CFG", 5.0),
+            face_detailer_denoise=_as_float("FACE_DETAILER_DENOISE", 0.16),
+            face_detailer_threshold=_as_float("FACE_DETAILER_THRESHOLD", 0.35),
+            face_detailer_dilation=_as_int("FACE_DETAILER_DILATION", 16),
+            face_detailer_crop_factor=_as_float("FACE_DETAILER_CROP_FACTOR", 2.4),
+            face_detailer_feather=_as_int("FACE_DETAILER_FEATHER", 24),
             auto_image_default=_as_bool("AUTO_IMAGE_DEFAULT", False),
             story_profile_path=story_path,
             generated_images_dir=project_root / "generated_images",

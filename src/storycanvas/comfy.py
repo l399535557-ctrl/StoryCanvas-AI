@@ -20,7 +20,7 @@ class ComfyError(RuntimeError):
 def build_core_workflow(
     settings: Settings, positive: str, negative: str, seed: int
 ) -> dict[str, Any]:
-    return {
+    workflow: dict[str, Any] = {
         "1": {
             "class_type": "CheckpointLoaderSimple",
             "inputs": {"ckpt_name": settings.checkpoint_name},
@@ -72,6 +72,76 @@ def build_core_workflow(
             "inputs": {"images": ["6", 0], "filename_prefix": "storycanvas/scene"},
         },
     }
+    if not settings.face_detailer_enabled:
+        return workflow
+
+    identity = positive.split(" BREAK ", maxsplit=1)[0]
+    face_positive = (
+        f"{identity}, symmetrical eyes, detailed irises, aligned pupils, well-defined eyebrows, "
+        "natural nose bridge, detailed lips, coherent facial proportions, clean facial lineart, "
+        "subtle facial shading, best quality"
+    )
+    face_negative = (
+        f"{negative}, cross-eyed, misaligned eyes, uneven eyes, malformed iris, duplicate pupils, "
+        "distorted face, asymmetrical face, deformed mouth, blurry face"
+    )
+    workflow.update(
+        {
+            "30": {
+                "class_type": "UltralyticsDetectorProvider",
+                "inputs": {"model_name": settings.face_detailer_model},
+            },
+            "31": {
+                "class_type": "CLIPTextEncode",
+                "inputs": {"text": face_positive, "clip": ["1", 1]},
+            },
+            "32": {
+                "class_type": "CLIPTextEncode",
+                "inputs": {"text": face_negative, "clip": ["1", 1]},
+            },
+            "33": {
+                "class_type": "FaceDetailer",
+                "inputs": {
+                    "image": ["6", 0],
+                    "model": ["1", 0],
+                    "clip": ["1", 1],
+                    "vae": ["1", 2],
+                    "guide_size": float(settings.face_detailer_guide_size),
+                    "guide_size_for": True,
+                    "max_size": float(settings.face_detailer_max_size),
+                    "seed": seed,
+                    "steps": settings.face_detailer_steps,
+                    "cfg": settings.face_detailer_cfg,
+                    "sampler_name": "dpmpp_2m",
+                    "scheduler": "karras",
+                    "positive": ["31", 0],
+                    "negative": ["32", 0],
+                    "denoise": settings.face_detailer_denoise,
+                    "feather": settings.face_detailer_feather,
+                    "noise_mask": True,
+                    "force_inpaint": True,
+                    "bbox_threshold": settings.face_detailer_threshold,
+                    "bbox_dilation": settings.face_detailer_dilation,
+                    "bbox_crop_factor": settings.face_detailer_crop_factor,
+                    "sam_detection_hint": "none",
+                    "sam_dilation": 0,
+                    "sam_threshold": 0.93,
+                    "sam_bbox_expansion": 0,
+                    "sam_mask_hint_threshold": 0.7,
+                    "sam_mask_hint_use_negative": "False",
+                    "drop_size": 20,
+                    "bbox_detector": ["30", 0],
+                    "wildcard": "",
+                    "cycle": 1,
+                    "noise_mask_feather": 20,
+                    "tiled_encode": False,
+                    "tiled_decode": False,
+                },
+            },
+        }
+    )
+    workflow["7"]["inputs"]["images"] = ["33", 0]
+    return workflow
 
 
 class ComfyClient:

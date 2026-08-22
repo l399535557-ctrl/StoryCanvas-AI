@@ -16,8 +16,8 @@ Text models maintain narrative continuity well, while image models need short, s
 instructions. StoryCanvas separates those responsibilities:
 
 1. The language model advances the interactive story.
-2. A second planning pass converts the new story beat into a visual prompt.
-3. A Core-node ComfyUI workflow renders the scene on a local NVIDIA GPU.
+2. A second planning pass expands the new story beat into structured visual direction.
+3. A Core-node ComfyUI workflow, with optional face refinement, renders it locally.
 4. The gateway returns text followed by a WebP image in one OpenAI-compatible response.
 
 ## Features
@@ -27,8 +27,10 @@ instructions. StoryCanvas separates those responsibilities:
 - Local ComfyUI generation with no cloud image API dependency.
 - Chinese and English controls: `/图`, `/图开`, `/图关`, `/image`, `/image-on`, `/image-off`.
 - Stateful automatic illustration mode.
-- LLM-based visual prompt planning with deterministic fallback.
+- Structured visual direction for identity, action, camera, depth, lighting, and materials.
+- Single-frame action constraints and robust JSON extraction with deterministic fallback.
 - Tiled VAE decoding and batch size 1 for constrained GPUs.
+- Optional conservative face refinement that remains disabled in the Core-only profile.
 - WebP output, bearer authentication, health checks, and Tailscale-friendly deployment.
 - Public demo content policy, automated tests, linting, and GitHub Actions CI.
 
@@ -45,9 +47,9 @@ sequenceDiagram
     G->>L: Continue narrative
     L-->>G: Story text
     opt /image or automatic illustration
-        G->>L: Convert story beat to visual JSON
-        L-->>G: Positive + negative prompts
-        G->>U: POST /prompt (Core workflow)
+        G->>L: Expand story beat into visual-director JSON
+        L-->>G: Structured prompt plan
+        G->>U: POST /prompt (Core + optional face refinement)
         loop until complete
             G->>U: GET /history/{prompt_id}
         end
@@ -122,7 +124,8 @@ Do not use Tailscale Funnel or public router port forwarding.
 .\.venv\Scripts\python.exe -m ruff check .
 ```
 
-The unit suite validates command parsing, public content policy, and the exact Core-node workflow.
+The unit suite validates command parsing, public content policy, structured prompt compilation,
+the Core workflow, and the optional detected-face refinement path.
 Live ComfyUI and provider calls are intentionally kept out of CI.
 
 ## Security and privacy

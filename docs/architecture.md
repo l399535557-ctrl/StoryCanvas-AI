@@ -18,7 +18,8 @@ ComfyUI jobs, stores WebP output, and composes the final response.
 The provider performs two logically separate jobs:
 
 1. Narrative continuation from the full conversation.
-2. Visual prompt planning from only the latest action and narrated result.
+2. Visual prompt planning from only the latest action and narrated result. The planner emits
+   separate identity, wardrobe, action, camera, environment, lighting, style, and negative fields.
 
 This separation prevents raw conversation history from becoming an unstructured diffusion prompt.
 
@@ -33,8 +34,9 @@ The default workflow uses only Core nodes:
 - `VAEDecodeTiled`
 - `SaveImage`
 
-The public MVP deliberately avoids ControlNet, IP-Adapter, custom nodes, and bundled model weights.
-Those can be added behind optional adapters without changing the HTTP contract.
+The default public profile deliberately avoids ControlNet, IP-Adapter, custom nodes, and bundled
+model weights. An opt-in FaceDetailer adapter can add one conservative detected-region pass through
+Impact Pack; it is disabled unless the operator installs the extension and enables it explicitly.
 
 ## Request lifecycle
 
@@ -44,7 +46,8 @@ Those can be added behind optional adapters without changing the HTTP contract.
 4. Add the story-system prompt and optional story profile.
 5. Request the next narrative turn from the text provider.
 6. Decide whether the turn is visually relevant.
-7. Ask the provider for structured positive and negative prompts.
+7. Ask the provider for a structured, single-frame visual plan. The compiler deduplicates tags and
+   emits stable `BREAK` sections for subject identity, action, camera, depth, lighting, and quality.
 8. Queue a serialized ComfyUI job and poll its history.
 9. Convert the returned image to WebP.
 10. Append Markdown to the same assistant response.
@@ -54,6 +57,8 @@ Those can be added behind optional adapters without changing the HTTP contract.
 - Generation is serialized with an asynchronous lock to prevent 8 GB GPUs from receiving
   overlapping jobs.
 - Batch size is fixed at one and VAE decoding is tiled.
+- Face refinement, when enabled, uses a low-denoise single cycle to recover facial detail without
+  intentionally restyling the full image.
 - Provider and ComfyUI failures are surfaced as HTTP 502 with short, non-secret diagnostics.
 - Streaming clients receive valid SSE, but the MVP buffers the narrative until the optional image
   is ready so that text and image remain one logical assistant message.

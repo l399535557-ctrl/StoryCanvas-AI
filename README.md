@@ -26,6 +26,7 @@ instructions. StoryCanvas separates those responsibilities:
 - Provider-agnostic text model configuration.
 - Local ComfyUI generation with no cloud image API dependency.
 - Chinese and English controls: `/图`, `/图开`, `/图关`, `/image`, `/image-on`, `/image-off`.
+- Hash-prefixed aliases (`#图`, `#图开`, `#图关`) for mobile clients that reserve slash commands.
 - Stateful automatic illustration mode.
 - Structured visual direction for identity, action, camera, depth, lighting, and materials.
 - Single-frame action constraints and robust JSON extraction with deterministic fallback.
@@ -116,6 +117,7 @@ Do not use Tailscale Funnel or public router port forwarding.
 | `/图 <action>` or `/image <action>` | Force one illustration after the narrated response |
 | `/图开` or `/image-on` | Enable automatic scene illustration |
 | `/图关` or `/image-off` | Disable automatic scene illustration |
+| `#图`, `#图开`, `#图关` | NativeTavern-compatible aliases for the same controls |
 
 ## Testing
 

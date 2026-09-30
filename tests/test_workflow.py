@@ -36,6 +36,12 @@ def test_core_workflow_has_only_expected_nodes(tmp_path: Path) -> None:
         face_detailer_crop_factor=2.4,
         face_detailer_feather=24,
         auto_image_default=False,
+        memory_enabled=True,
+        memory_extract_enabled=True,
+        memory_database_path=tmp_path / "story-memory.sqlite3",
+        memory_default_save_id="default",
+        memory_top_k=8,
+        memory_context_max_chars=6000,
         story_profile_path=tmp_path / "story.md",
         generated_images_dir=tmp_path / "generated_images",
     )

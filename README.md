@@ -5,7 +5,7 @@ an OpenAI-compatible language model to a local ComfyUI instance, then appends a 
 the same assistant response. Chatbox, SillyTavern, a custom web client, or any compatible client can
 use it through the standard `/v1/chat/completions` API.
 
-> Status: portfolio-ready MVP. The public configuration is intended for general-audience fictional
+> Status: portfolio-ready v0.2. The public configuration is intended for general-audience fictional
 > adventures and deliberately excludes explicit sexual imagery and graphic gore.
 
 ![StoryCanvas AI demo: an explorer beneath a floating observatory](docs/assets/storycanvas-demo.webp)
@@ -16,9 +16,10 @@ Text models maintain narrative continuity well, while image models need short, s
 instructions. StoryCanvas separates those responsibilities:
 
 1. The language model advances the interactive story.
-2. A second planning pass expands the new story beat into structured visual direction.
-3. A Core-node ComfyUI workflow, with optional face refinement, renders it locally.
-4. The gateway returns text followed by a WebP image in one OpenAI-compatible response.
+2. Per-save SQLite memory retrieves relevant facts and injects a compact RAG context.
+3. A second planning pass expands the new story beat into structured visual direction.
+4. A Core-node ComfyUI workflow, with optional face refinement, renders it locally.
+5. The gateway returns text followed by a WebP image in one OpenAI-compatible response.
 
 ## Features
 
@@ -28,6 +29,10 @@ instructions. StoryCanvas separates those responsibilities:
 - Chinese and English controls: `/图`, `/图开`, `/图关`, `/image`, `/image-on`, `/image-off`.
 - Hash-prefixed aliases (`#图`, `#图开`, `#图关`) for mobile clients that reserve slash commands.
 - Stateful automatic illustration mode.
+- Per-save SQLite long-term memory with tags, entities, importance, and duplicate detection.
+- Local hybrid RAG using SQLite FTS5, keyword overlap, recency, and importance scoring.
+- Automatic local memory extraction without an additional model request.
+- Save selection through request fields, an HTTP header, or chat commands.
 - Structured visual direction for identity, action, camera, depth, lighting, and materials.
 - Single-frame action constraints and robust JSON extraction with deterministic fallback.
 - Tiled VAE decoding and batch size 1 for constrained GPUs.
@@ -41,12 +46,16 @@ instructions. StoryCanvas separates those responsibilities:
 sequenceDiagram
     participant C as Chat client
     participant G as StoryCanvas gateway
+    participant M as SQLite memory/RAG
     participant L as OpenAI-compatible LLM
     participant U as ComfyUI
 
     C->>G: POST /v1/chat/completions
+    G->>M: Retrieve relevant save memories
+    M-->>G: Compact tagged context
     G->>L: Continue narrative
     L-->>G: Story text
+    G->>M: Extract and persist durable facts
     opt /image or automatic illustration
         G->>L: Expand story beat into visual-director JSON
         L-->>G: Structured prompt plan
@@ -118,6 +127,13 @@ Do not use Tailscale Funnel or public router port forwarding.
 | `/图开` or `/image-on` | Enable automatic scene illustration |
 | `/图关` or `/image-off` | Disable automatic scene illustration |
 | `#图`, `#图开`, `#图关` | NativeTavern-compatible aliases for the same controls |
+| `/存档 <名称>` | Switch to or create an isolated story save |
+| `/存档列表` | List available saves and the active save |
+| `/记忆 <内容>` | Add a durable memory to the active save |
+| `/记忆状态` | Show memory counts and retrieval availability |
+
+Clients may also select a save with `story_save_id`, `conversation_id`, or the
+`X-Story-Save-ID` header. See [docs/api.md](docs/api.md).
 
 ## Testing
 
@@ -127,12 +143,14 @@ Do not use Tailscale Funnel or public router port forwarding.
 ```
 
 The unit suite validates command parsing, public content policy, structured prompt compilation,
-the Core workflow, and the optional detected-face refinement path.
+the Core workflow, optional detected-face refinement, save isolation, memory extraction, and RAG
+context injection.
 Live ComfyUI and provider calls are intentionally kept out of CI.
 
 ## Security and privacy
 
-- `.env`, generated images, local profiles, model weights, and state are ignored by Git.
+- `.env`, generated images, local profiles, model weights, state, and SQLite memory files are
+  ignored by Git.
 - The API requires a separate gateway bearer key.
 - The recommended server bind is localhost; remote access uses Tailscale Serve.
 - The public repository contains no chat history, private character profile, dataset, or checkpoint.

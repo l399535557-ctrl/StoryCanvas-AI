@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import time
 import uuid
@@ -9,13 +10,16 @@ from typing import Any
 
 import httpx
 import uvicorn
-from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from .comfy import ComfyClient, ComfyError
 from .commands import ImageCommand, parse_command
 from .config import Settings
+from .memory_api import build_memory_router
+from .memory_rag import MemoryRAGService
+from .memory_store import MemoryStore
 from .policy import PUBLIC_STORY_SYSTEM_PROMPT, check_public_image_policy, is_visually_relevant
 from .prompts import build_visual_prompt
 from .state import StateStore
@@ -34,6 +38,8 @@ class ChatRequest(BaseModel):
     stream: bool = False
     temperature: float = 0.8
     max_tokens: int | None = None
+    story_save_id: str | None = None
+    conversation_id: str | None = None
 
 
 def _text(content: Any) -> str:
@@ -72,12 +78,44 @@ def _story_profile(path: Path) -> str:
 
 def create_app(settings: Settings | None = None) -> FastAPI:
     cfg = settings or Settings.load(Path.cwd())
-    state = StateStore(cfg.root / "state.json", cfg.auto_image_default)
+    state = StateStore(
+        cfg.root / "state.json",
+        cfg.auto_image_default,
+        cfg.memory_default_save_id,
+    )
     upstream = OpenAICompatibleClient(cfg)
     comfy = ComfyClient(cfg)
+    memory_store = MemoryStore(cfg.memory_database_path)
+    memory_state: dict[str, Any] = {"active_save_id": state.active_save_id}
+    memory_runtime: dict[str, Any] = {
+        "active_save_id": state.active_save_id,
+        "last_memory_query": None,
+        "last_memory_retrieved": 0,
+        "last_memory_ids": [],
+        "last_memory_extract_count": 0,
+        "last_memory_error": None,
+    }
+    memory_lock = asyncio.Lock()
+
+    def save_memory_state() -> None:
+        state.set_active_save_id(str(memory_state["active_save_id"]))
+
+    memory_service = MemoryRAGService(
+        store=memory_store,
+        state=memory_state,
+        runtime=memory_runtime,
+        state_lock=memory_lock,
+        save_state=save_memory_state,
+        character_memory={"characters": {}},
+        enabled=cfg.memory_enabled,
+        extract_enabled=cfg.memory_extract_enabled,
+        default_save_id=cfg.memory_default_save_id,
+        top_k=cfg.memory_top_k,
+        context_max_chars=cfg.memory_context_max_chars,
+    )
     app = FastAPI(
         title="StoryCanvas AI",
-        version="0.1.0",
+        version="0.2.0",
         description="OpenAI-compatible text-adventure gateway with local ComfyUI illustrations.",
     )
 
@@ -86,6 +124,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(status_code=503, detail="GATEWAY_API_KEY is not configured")
         if authorization != f"Bearer {cfg.gateway_api_key}":
             raise HTTPException(status_code=401, detail="Invalid gateway API key")
+
+    app.include_router(
+        build_memory_router(
+            store=memory_store,
+            state=memory_state,
+            require_gateway_key=require_key,
+            default_save_id=cfg.memory_default_save_id,
+        )
+    )
 
     @app.get("/")
     async def root() -> dict[str, str]:
@@ -109,6 +156,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "comfyui_ok": comfy_ok,
                 "device": device,
                 "auto_image": state.auto_image,
+                "memory": {
+                    "enabled": cfg.memory_enabled,
+                    "extract_enabled": cfg.memory_extract_enabled,
+                    "active_save_id": memory_state["active_save_id"],
+                    "top_k": cfg.memory_top_k,
+                    "context_max_chars": cfg.memory_context_max_chars,
+                    **memory_store.stats(),
+                    "runtime": memory_runtime,
+                },
                 "face_detailer": {
                     "enabled": cfg.face_detailer_enabled,
                     "model": cfg.face_detailer_model if cfg.face_detailer_enabled else None,
@@ -140,22 +196,34 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     async def stream_result(result: dict[str, Any]) -> AsyncIterator[bytes]:
         content = result["choices"][0]["message"]["content"]
-        chunk = {
+        base_chunk = {
             "id": result["id"],
             "object": "chat.completion.chunk",
             "created": result["created"],
             "model": result["model"],
-            "choices": [
+            "choices": [],
+        }
+        role_chunk = dict(base_chunk)
+        role_chunk["choices"] = [
+            {"index": 0, "delta": {"role": "assistant"}, "finish_reason": None}
+        ]
+        yield f"data: {json.dumps(role_chunk, ensure_ascii=True)}\n\n".encode()
+
+        for start in range(0, len(content), 128):
+            content_chunk = dict(base_chunk)
+            content_chunk["choices"] = [
                 {
                     "index": 0,
-                    "delta": {"role": "assistant", "content": content},
+                    "delta": {"content": content[start : start + 128]},
                     "finish_reason": None,
                 }
-            ],
-        }
-        yield f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n".encode()
-        chunk["choices"][0] = {"index": 0, "delta": {}, "finish_reason": "stop"}
-        yield f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n".encode()
+            ]
+            yield f"data: {json.dumps(content_chunk, ensure_ascii=True)}\n\n".encode()
+            await asyncio.sleep(0.02)
+
+        stop_chunk = dict(base_chunk)
+        stop_chunk["choices"] = [{"index": 0, "delta": {}, "finish_reason": "stop"}]
+        yield f"data: {json.dumps(stop_chunk, ensure_ascii=True)}\n\n".encode()
         yield b"data: [DONE]\n\n"
 
     @app.post(
@@ -163,7 +231,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         dependencies=[Depends(require_key)],
         response_model=None,
     )
-    async def chat_completions(request: ChatRequest) -> JSONResponse | StreamingResponse:
+    async def chat_completions(
+        http_request: Request,
+        request: ChatRequest,
+    ) -> JSONResponse | StreamingResponse:
         latest_index = max(
             (index for index, item in enumerate(request.messages) if item.role == "user"),
             default=-1,
@@ -171,6 +242,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if latest_index < 0:
             raise HTTPException(status_code=400, detail="A user message is required")
         latest = _text(request.messages[latest_index].content)
+        request_payload = request.model_dump()
+        request_payload.update(request.model_extra or {})
+        save_id = memory_service.resolve_save_id(http_request.headers, request_payload)
+        await asyncio.to_thread(memory_store.ensure_save, save_id)
+        memory_runtime["active_save_id"] = save_id
+        memory_command = await memory_service.handle_command(latest)
+        if memory_command is not None:
+            result = _result(memory_command)
+            if request.stream:
+                return StreamingResponse(stream_result(result), media_type="text/event-stream")
+            return JSONResponse(result)
         parsed = parse_command(latest)
         if parsed.command is ImageCommand.ENABLE:
             state.set_auto_image(True)
@@ -184,17 +266,25 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 raise HTTPException(status_code=400, detail=policy.reason)
             messages = [item.model_dump() for item in request.messages]
             messages[latest_index]["content"] = parsed.text or latest
+            memory_message = await memory_service.retrieve_message(
+                save_id,
+                parsed.text or latest,
+                messages,
+            )
             system_content = PUBLIC_STORY_SYSTEM_PROMPT
             profile = _story_profile(cfg.story_profile_path)
             if profile:
                 system_content += f"\n\nStory profile:\n{profile}"
             messages.insert(0, {"role": "system", "content": system_content})
+            if memory_message is not None:
+                messages.insert(1, memory_message)
             try:
                 answer, upstream_payload = await upstream.complete(
                     messages,
                     temperature=request.temperature,
                     max_tokens=request.max_tokens,
                 )
+                memory_service.schedule_capture(save_id, parsed.text or latest, answer)
                 generate = parsed.command is ImageCommand.FORCE or (
                     state.auto_image and is_visually_relevant(f"{parsed.text}\n{answer}")
                 )

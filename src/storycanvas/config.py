@@ -55,6 +55,12 @@ class Settings:
     face_detailer_crop_factor: float
     face_detailer_feather: int
     auto_image_default: bool
+    memory_enabled: bool
+    memory_extract_enabled: bool
+    memory_database_path: Path
+    memory_default_save_id: str
+    memory_top_k: int
+    memory_context_max_chars: int
     story_profile_path: Path
     generated_images_dir: Path
 
@@ -65,6 +71,9 @@ class Settings:
         story_path = Path(os.getenv("STORY_PROFILE_PATH", "examples/story_profile.example.md"))
         if not story_path.is_absolute():
             story_path = project_root / story_path
+        memory_path = Path(os.getenv("MEMORY_DATABASE", "story_memory.sqlite3"))
+        if not memory_path.is_absolute():
+            memory_path = project_root / memory_path
         return cls(
             root=project_root,
             llm_api_key=os.getenv("LLM_API_KEY", "").strip(),
@@ -97,6 +106,12 @@ class Settings:
             face_detailer_crop_factor=_as_float("FACE_DETAILER_CROP_FACTOR", 2.4),
             face_detailer_feather=_as_int("FACE_DETAILER_FEATHER", 24),
             auto_image_default=_as_bool("AUTO_IMAGE_DEFAULT", False),
+            memory_enabled=_as_bool("MEMORY_ENABLED", True),
+            memory_extract_enabled=_as_bool("MEMORY_EXTRACT_ENABLED", True),
+            memory_database_path=memory_path,
+            memory_default_save_id=os.getenv("MEMORY_DEFAULT_SAVE_ID", "default").strip(),
+            memory_top_k=_as_int("MEMORY_TOP_K", 8),
+            memory_context_max_chars=_as_int("MEMORY_CONTEXT_MAX_CHARS", 6000),
             story_profile_path=story_path,
             generated_images_dir=project_root / "generated_images",
         )

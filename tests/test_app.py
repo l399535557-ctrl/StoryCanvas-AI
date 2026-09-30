@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -37,6 +38,12 @@ def settings_for_test(tmp_path: Path) -> Settings:
         face_detailer_crop_factor=2.4,
         face_detailer_feather=24,
         auto_image_default=False,
+        memory_enabled=True,
+        memory_extract_enabled=True,
+        memory_database_path=tmp_path / "story-memory.sqlite3",
+        memory_default_save_id="default",
+        memory_top_k=8,
+        memory_context_max_chars=6000,
         story_profile_path=tmp_path / "story.md",
         generated_images_dir=tmp_path / "generated_images",
     )
@@ -64,3 +71,53 @@ def test_control_command_does_not_call_provider(tmp_path: Path) -> None:
         )
         assert response.status_code == 200
         assert "enabled" in response.json()["choices"][0]["message"]["content"]
+
+
+def test_control_command_stream_uses_bounded_sse_chunks(tmp_path: Path) -> None:
+    with TestClient(create_app(settings_for_test(tmp_path))) as client:
+        response = client.post(
+            "/v1/chat/completions",
+            headers={"Authorization": "Bearer gateway-test"},
+            json={
+                "model": "storycanvas",
+                "stream": True,
+                "messages": [{"role": "user", "content": "/图开"}],
+            },
+        )
+        assert response.status_code == 200
+        events = [
+            line.removeprefix("data: ")
+            for line in response.text.splitlines()
+            if line.startswith("data: ")
+        ]
+        assert events[-1] == "[DONE]"
+        chunks = [json.loads(event) for event in events[:-1]]
+        assert chunks[0]["choices"][0]["delta"] == {"role": "assistant"}
+        assert chunks[-1]["choices"][0]["finish_reason"] == "stop"
+        assert all(
+            len(chunk["choices"][0]["delta"].get("content", "")) <= 128
+            for chunk in chunks
+        )
+
+
+def test_memory_management_api(tmp_path: Path) -> None:
+    with TestClient(create_app(settings_for_test(tmp_path))) as client:
+        headers = {"Authorization": "Bearer gateway-test"}
+        created = client.post(
+            "/v1/story/saves/demo/memories",
+            headers=headers,
+            json={
+                "type": "world",
+                "content": "雾港城的北门只在满月时开启。",
+                "tags": ["雾港城", "北门", "满月"],
+                "entities": ["雾港城"],
+                "importance": 5,
+            },
+        )
+        assert created.status_code == 200
+        listed = client.get(
+            "/v1/story/saves/demo/memories",
+            headers=headers,
+        )
+        assert listed.status_code == 200
+        assert listed.json()["data"][0]["content"].startswith("雾港城")

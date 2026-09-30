@@ -16,6 +16,8 @@ chat response.
   an 8 GB NVIDIA GPU using batch size one and tiled VAE decoding.
 - Added command-driven and automatic illustration modes, state persistence, WebP delivery, bearer
   authentication, and private-device access through Tailscale Serve.
+- Built save-isolated SQLite long-term memory and local hybrid RAG with FTS5, tags, entities,
+  recency/importance scoring, duplicate detection, and a bounded context budget.
 - Added robust visual-plan parsing, single-frame composition constraints, and an opt-in low-denoise
   detected-face refinement path while preserving a dependency-light Core default.
 - Standardized configuration, tests, linting, CI, security documentation, and reproducible Windows
@@ -27,8 +29,11 @@ chat response.
 - Why the gateway buffers streaming when one assistant message must include a delayed image.
 - How the generation lock prevents overlapping jobs from exhausting limited VRAM.
 - How OpenAI compatibility decouples the client from the chosen model provider.
+- How save-scoped retrieval preserves long-running story continuity without sending the complete
+  archive on every turn.
 - How localhost binding plus Tailscale reduces exposure compared with public port forwarding.
 
 ## Suggested repository topics
 
-`fastapi`, `comfyui`, `sdxl`, `llm`, `text-adventure`, `openai-compatible`, `local-ai`, `tailscale`
+`fastapi`, `comfyui`, `sdxl`, `llm`, `rag`, `sqlite`, `text-adventure`, `openai-compatible`,
+`local-ai`, `tailscale`

@@ -13,6 +13,17 @@ The gateway is the orchestration boundary. It authenticates requests, parses ima
 maintains the automatic-illustration flag, calls the text provider, builds visual prompts, queues
 ComfyUI jobs, stores WebP output, and composes the final response.
 
+### SQLite memory and local RAG
+
+Each save has an isolated namespace. Durable memories store a type, normalized content, tags,
+entities, importance, optional story time, and access metadata. A content fingerprint prevents
+duplicate writes. Retrieval combines SQLite FTS5 when available with token overlap, Chinese
+bigrams, recency, and importance, then formats only the top bounded results for the model context.
+
+Memory extraction is deterministic and local: it recognizes durable facts from the completed turn
+without making another provider request. This keeps cost and latency predictable, and the feature
+can be disabled independently from retrieval.
+
 ### Text provider
 
 The provider performs two logically separate jobs:
@@ -41,16 +52,19 @@ Impact Pack; it is disabled unless the operator installs the extension and enabl
 ## Request lifecycle
 
 1. Validate the gateway bearer key.
-2. Parse the latest user message for a control command.
-3. Apply the public image policy before forced generation.
-4. Add the story-system prompt and optional story profile.
-5. Request the next narrative turn from the text provider.
-6. Decide whether the turn is visually relevant.
-7. Ask the provider for a structured, single-frame visual plan. The compiler deduplicates tags and
+2. Resolve and normalize the save ID from the header, request body, or active state.
+3. Parse the latest user message for image or memory control commands.
+4. Retrieve relevant save-scoped memories and inject a bounded RAG context.
+5. Apply the public image policy before forced generation.
+6. Add the story-system prompt and optional story profile.
+7. Request the next narrative turn from the text provider.
+8. Extract durable facts locally and persist them asynchronously.
+9. Decide whether the turn is visually relevant.
+10. Ask the provider for a structured, single-frame visual plan. The compiler deduplicates tags and
    emits stable `BREAK` sections for subject identity, action, camera, depth, lighting, and quality.
-8. Queue a serialized ComfyUI job and poll its history.
-9. Convert the returned image to WebP.
-10. Append Markdown to the same assistant response.
+11. Queue a serialized ComfyUI job and poll its history.
+12. Convert the returned image to WebP.
+13. Append Markdown to the same assistant response.
 
 ## Reliability decisions
 
@@ -63,11 +77,14 @@ Impact Pack; it is disabled unless the operator installs the extension and enabl
 - Streaming clients receive valid SSE, but the MVP buffers the narrative until the optional image
   is ready so that text and image remain one logical assistant message.
 - Generated files use random UUID names and the file route strips path components.
+- SQLite uses WAL mode, foreign keys, parameterized queries, and save-scoped retrieval.
+- Memory context has a strict character budget so long-running saves do not exhaust the model
+  context window.
 
 ## Extension points
 
 - Replace the keyword visual heuristic with a classifier.
-- Add Redis or SQLite for multi-user state.
+- Add authenticated user ownership on top of save isolation for multi-user deployments.
 - Add WebSocket progress events for long image jobs.
 - Add opt-in style/identity adapters with license-aware model manifests.
 - Add OpenTelemetry spans and Prometheus metrics.

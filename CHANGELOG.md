@@ -3,6 +3,26 @@
 All notable public changes are recorded here. Local-only character data, credentials, generated
 media, model weights, and adult-oriented prompt rules are intentionally excluded.
 
+## 0.6.0 - 2026-10-03
+
+### Added
+
+- Request ID middleware with safe client ID validation and generated fallback IDs.
+- `X-Request-ID` on every HTTP response and the same ID in structured error responses.
+- Privacy-conscious JSON access logs containing method, path, status, duration, and request ID,
+  without credentials, request bodies, story text, or memory content.
+- Optional `LOG_LEVEL` and `LOG_FILE` configuration for persistent operational logs.
+
+### Changed
+
+- HTTP and validation errors now include a traceable request ID.
+- The FastAPI application metadata now reports version 0.6.0.
+
+### Verification
+
+- Added request ID echo, rejection/fallback, and error-correlation coverage. The full suite now
+  contains 21 passing tests.
+
 ## 0.5.0 - 2026-10-03
 
 ### Added

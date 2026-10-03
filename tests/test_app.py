@@ -59,6 +59,26 @@ def test_models_requires_gateway_key(tmp_path: Path) -> None:
         assert response.json()["data"][0]["id"] == "storycanvas"
 
 
+def test_request_id_is_echoed_and_included_in_errors(tmp_path: Path) -> None:
+    with TestClient(create_app(settings_for_test(tmp_path))) as client:
+        response = client.get(
+            "/v1/models",
+            headers={"X-Request-ID": "demo-request-001"},
+        )
+        assert response.status_code == 401
+        assert response.headers["X-Request-ID"] == "demo-request-001"
+        assert response.json()["request_id"] == "demo-request-001"
+
+        generated = client.get(
+            "/v1/models",
+            headers={"Authorization": "Bearer gateway-test", "X-Request-ID": "invalid id"},
+        )
+        assert generated.status_code == 200
+        generated_id = generated.headers["X-Request-ID"]
+        assert len(generated_id) == 32
+        assert generated_id != "invalid id"
+
+
 def test_control_command_does_not_call_provider(tmp_path: Path) -> None:
     with TestClient(create_app(settings_for_test(tmp_path))) as client:
         response = client.post(

@@ -11,6 +11,10 @@ Authorization: Bearer <GATEWAY_API_KEY>
 `/`, `/health`, and generated image URLs do not require authentication so chat clients can render
 Markdown images. Remote deployment must therefore remain inside a trusted Tailnet.
 
+Every response includes `X-Request-ID`. A client may provide a safe ID containing up to 64 ASCII
+letters, digits, dots, underscores, or hyphens; otherwise the gateway generates one. HTTP and
+validation error bodies also include `request_id` for log correlation.
+
 ## `GET /health`
 
 Returns configuration flags, ComfyUI availability, GPU name, and automatic illustration state.

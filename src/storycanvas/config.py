@@ -63,6 +63,8 @@ class Settings:
     memory_context_max_chars: int
     story_profile_path: Path
     generated_images_dir: Path
+    log_level: str = "INFO"
+    log_file: Path | None = None
 
     @classmethod
     def load(cls, root: Path | None = None) -> Settings:
@@ -74,6 +76,10 @@ class Settings:
         memory_path = Path(os.getenv("MEMORY_DATABASE", "story_memory.sqlite3"))
         if not memory_path.is_absolute():
             memory_path = project_root / memory_path
+        log_file_value = os.getenv("LOG_FILE", "").strip()
+        log_file = Path(log_file_value) if log_file_value else None
+        if log_file is not None and not log_file.is_absolute():
+            log_file = project_root / log_file
         return cls(
             root=project_root,
             llm_api_key=os.getenv("LLM_API_KEY", "").strip(),
@@ -114,6 +120,8 @@ class Settings:
             memory_context_max_chars=_as_int("MEMORY_CONTEXT_MAX_CHARS", 6000),
             story_profile_path=story_path,
             generated_images_dir=project_root / "generated_images",
+            log_level=os.getenv("LOG_LEVEL", "INFO").strip() or "INFO",
+            log_file=log_file,
         )
 
     def configuration_status(self) -> dict[str, bool]:

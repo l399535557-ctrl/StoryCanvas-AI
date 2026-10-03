@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import time
 import uuid
 from collections.abc import AsyncIterator
@@ -11,6 +12,7 @@ from typing import Any
 import httpx
 import uvicorn
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -20,6 +22,7 @@ from .config import Settings
 from .memory_api import build_memory_router
 from .memory_rag import MemoryRAGService
 from .memory_store import MemoryStore
+from .observability import configure_logging, request_id_context
 from .policy import PUBLIC_STORY_SYSTEM_PROMPT, check_public_image_policy, is_visually_relevant
 from .prompts import build_visual_prompt
 from .state import StateStore
@@ -78,6 +81,7 @@ def _story_profile(path: Path) -> str:
 
 def create_app(settings: Settings | None = None) -> FastAPI:
     cfg = settings or Settings.load(Path.cwd())
+    logger = configure_logging(cfg.log_level, cfg.log_file)
     state = StateStore(
         cfg.root / "state.json",
         cfg.auto_image_default,
@@ -115,9 +119,69 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     app = FastAPI(
         title="StoryCanvas AI",
-        version="0.3.0",
+        version="0.6.0",
         description="OpenAI-compatible text-adventure gateway with local ComfyUI illustrations.",
     )
+
+    @app.middleware("http")
+    async def request_observability(request: Request, call_next: Any) -> Any:
+        requested_id = request.headers.get("X-Request-ID", "").strip()
+        request_id = (
+            requested_id
+            if re.fullmatch(r"[A-Za-z0-9._-]{1,64}", requested_id)
+            else uuid.uuid4().hex
+        )
+        token = request_id_context.set(request_id)
+        request.state.request_id = request_id
+        started = time.perf_counter()
+        try:
+            response = await call_next(request)
+        except Exception as exc:
+            logger.exception(
+                "request_failed",
+                extra={
+                    "method": request.method,
+                    "path": request.url.path,
+                    "duration_ms": round((time.perf_counter() - started) * 1000, 2),
+                    "error_type": type(exc).__name__,
+                },
+            )
+            raise
+        else:
+            response.headers["X-Request-ID"] = request_id
+            logger.info(
+                "request_completed",
+                extra={
+                    "method": request.method,
+                    "path": request.url.path,
+                    "status_code": response.status_code,
+                    "duration_ms": round((time.perf_counter() - started) * 1000, 2),
+                },
+            )
+            return response
+        finally:
+            request_id_context.reset(token)
+
+    @app.exception_handler(HTTPException)
+    async def http_error(request: Request, exc: HTTPException) -> JSONResponse:
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={
+                "detail": exc.detail,
+                "request_id": getattr(request.state, "request_id", "-"),
+            },
+            headers=exc.headers,
+        )
+
+    @app.exception_handler(RequestValidationError)
+    async def validation_error(request: Request, exc: RequestValidationError) -> JSONResponse:
+        return JSONResponse(
+            status_code=422,
+            content={
+                "detail": exc.errors(),
+                "request_id": getattr(request.state, "request_id", "-"),
+            },
+        )
 
     async def require_key(authorization: str | None = Header(default=None)) -> None:
         if not cfg.gateway_api_key:

@@ -53,6 +53,11 @@ Invoke-RestMethod http://127.0.0.1:8000/health
 
 The result should report `comfyui_ok: true`.
 
+The gateway writes one JSON access-log record per request. Set `LOG_LEVEL` to control verbosity and
+set `LOG_FILE=logs/storycanvas.jsonl` when a persistent diagnostic history is required. Logs include
+request IDs and timing but intentionally omit authorization headers, request bodies, story text,
+and stored memory content.
+
 ## 4. Private remote access
 
 Install Tailscale on Windows and the client device, sign both into the same Tailnet, then expose

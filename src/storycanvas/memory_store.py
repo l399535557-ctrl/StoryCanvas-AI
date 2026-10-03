@@ -155,7 +155,11 @@ class MemoryStore:
                     created_at INTEGER NOT NULL,
                     started_at INTEGER,
                     finished_at INTEGER,
-                    duration_seconds REAL
+                    duration_seconds REAL,
+                    prompt_id TEXT,
+                    positive_prompt TEXT,
+                    negative_prompt TEXT,
+                    retry_of_task_id TEXT
                 );
 
                 CREATE INDEX IF NOT EXISTS idx_generation_tasks_save_created
@@ -184,7 +188,21 @@ class MemoryStore:
                 connection.execute(
                     "ALTER TABLE memories ADD COLUMN supersedes_memory_id INTEGER"
                 )
-            connection.execute("PRAGMA user_version = 4")
+            task_columns = {
+                str(row["name"])
+                for row in connection.execute("PRAGMA table_info(generation_tasks)").fetchall()
+            }
+            for column, definition in {
+                "prompt_id": "TEXT",
+                "positive_prompt": "TEXT",
+                "negative_prompt": "TEXT",
+                "retry_of_task_id": "TEXT",
+            }.items():
+                if column not in task_columns:
+                    connection.execute(
+                        f"ALTER TABLE generation_tasks ADD COLUMN {column} {definition}"
+                    )
+            connection.execute("PRAGMA user_version = 5")
             connection.execute(
                 """
                 UPDATE generation_tasks
@@ -1054,7 +1072,13 @@ class MemoryStore:
             target_name=target_name,
         )
 
-    def create_generation_task(self, save_id: object, request_id: object) -> str:
+    def create_generation_task(
+        self,
+        save_id: object,
+        request_id: object,
+        *,
+        retry_of_task_id: object = None,
+    ) -> str:
         normalized = self.ensure_save(save_id)
         task_id = uuid.uuid4().hex
         now = int(time.time())
@@ -1062,12 +1086,63 @@ class MemoryStore:
             connection.execute(
                 """
                 INSERT INTO generation_tasks(
-                    id, save_id, request_id, status, created_at
-                ) VALUES (?, ?, ?, 'queued', ?)
+                    id, save_id, request_id, status, created_at, retry_of_task_id
+                ) VALUES (?, ?, ?, 'queued', ?, ?)
                 """,
-                (task_id, normalized, _clean_text(request_id, 64) or "-", now),
+                (
+                    task_id,
+                    normalized,
+                    _clean_text(request_id, 64) or "-",
+                    now,
+                    _clean_text(retry_of_task_id, 64) or None,
+                ),
             )
         return task_id
+
+    def set_generation_task_prompts(
+        self,
+        task_id: object,
+        positive_prompt: object,
+        negative_prompt: object,
+    ) -> bool:
+        with self._connect() as connection:
+            cursor = connection.execute(
+                """
+                UPDATE generation_tasks
+                SET positive_prompt = ?, negative_prompt = ?
+                WHERE id = ? AND status = 'queued'
+                """,
+                (
+                    _clean_text(positive_prompt, 12000),
+                    _clean_text(negative_prompt, 6000),
+                    _clean_text(task_id, 64),
+                ),
+            )
+        return cursor.rowcount > 0
+
+    def set_generation_task_prompt_id(self, task_id: object, prompt_id: object) -> bool:
+        with self._connect() as connection:
+            cursor = connection.execute(
+                """
+                UPDATE generation_tasks SET prompt_id = ?
+                WHERE id = ? AND status = 'running'
+                """,
+                (_clean_text(prompt_id, 120), _clean_text(task_id, 64)),
+            )
+        return cursor.rowcount > 0
+
+    def cancel_generation_task(self, task_id: object) -> bool:
+        now = int(time.time())
+        with self._connect() as connection:
+            cursor = connection.execute(
+                """
+                UPDATE generation_tasks
+                SET status = 'cancelled', finished_at = ?, error = 'cancelled by user'
+                WHERE id = ? AND status IN ('queued', 'running')
+                """,
+                (now, _clean_text(task_id, 64)),
+            )
+        return cursor.rowcount > 0
 
     def update_generation_task(
         self,
@@ -1094,7 +1169,7 @@ class MemoryStore:
                     started_at = COALESCE(started_at, ?),
                     finished_at = ?,
                     duration_seconds = COALESCE(?, duration_seconds)
-                WHERE id = ?
+                WHERE id = ? AND (? = 'cancelled' OR status != 'cancelled')
                 """,
                 (
                     clean_status,
@@ -1104,6 +1179,7 @@ class MemoryStore:
                     finished_at,
                     duration_seconds,
                     _clean_text(task_id, 64),
+                    clean_status,
                 ),
             )
         return cursor.rowcount > 0
@@ -1113,7 +1189,20 @@ class MemoryStore:
             row = connection.execute(
                 """
                 SELECT id, save_id, request_id, status, image_filename, error,
-                       created_at, started_at, finished_at, duration_seconds
+                       created_at, started_at, finished_at, duration_seconds,
+                       prompt_id, retry_of_task_id
+                FROM generation_tasks WHERE id = ?
+                """,
+                (_clean_text(task_id, 64),),
+            ).fetchone()
+        return dict(row) if row else None
+
+    def get_generation_task_payload(self, task_id: object) -> dict[str, Any] | None:
+        with self._connect() as connection:
+            row = connection.execute(
+                """
+                SELECT id, save_id, request_id, status, positive_prompt,
+                       negative_prompt, retry_of_task_id
                 FROM generation_tasks WHERE id = ?
                 """,
                 (_clean_text(task_id, 64),),
@@ -1136,7 +1225,8 @@ class MemoryStore:
             rows = connection.execute(
                 """
                 SELECT id, save_id, request_id, status, image_filename, error,
-                       created_at, started_at, finished_at, duration_seconds
+                       created_at, started_at, finished_at, duration_seconds,
+                       prompt_id, retry_of_task_id
                 FROM generation_tasks
                 WHERE (? IS NULL OR save_id = ?) AND (? IS NULL OR status = ?)
                 ORDER BY created_at DESC, id DESC
@@ -1225,7 +1315,7 @@ class MemoryStore:
             if result is None or result[0] != "ok":
                 raise ValueError("database backup failed integrity check")
             schema_version = int(validation.execute("PRAGMA user_version").fetchone()[0])
-            if schema_version > 4:
+            if schema_version > 5:
                 raise ValueError("database backup uses a newer unsupported schema")
 
         safety_backup = self.create_database_backup(

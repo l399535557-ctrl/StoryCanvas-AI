@@ -58,7 +58,7 @@ def test_memory_store_migrates_version_one_database(tmp_path: Path) -> None:
     assert "archived_at" in memory_columns
     assert "status" in memory_columns
     assert "supersedes_memory_id" in memory_columns
-    assert user_version == 4
+    assert user_version == 5
 
 
 def test_memory_store_isolates_saves_and_retrieves_chinese(tmp_path: Path) -> None:
@@ -292,6 +292,22 @@ def test_generation_task_lifecycle_and_restart_recovery(tmp_path: Path) -> None:
     assert succeeded[0]["image_filename"] == "scene.webp"
     assert reopened.stats("demo")["task_count"] == 2
 
+    cancellable_id = reopened.create_generation_task("demo", "request-003")
+    assert reopened.set_generation_task_prompts(
+        cancellable_id,
+        "a moonlit tower",
+        "blurry",
+    )
+    assert reopened.cancel_generation_task(cancellable_id)
+    assert not reopened.update_generation_task(
+        cancellable_id,
+        "succeeded",
+        image_filename="late.webp",
+    )
+    payload = reopened.get_generation_task_payload(cancellable_id)
+    assert payload["status"] == "cancelled"
+    assert payload["positive_prompt"] == "a moonlit tower"
+
 
 def test_database_backup_restore_and_safety_snapshot(tmp_path: Path) -> None:
     database = tmp_path / "memory.sqlite3"
@@ -306,7 +322,7 @@ def test_database_backup_restore_and_safety_snapshot(tmp_path: Path) -> None:
     )
     assert original_id is not None
     backup = store.create_database_backup(backups, label="manual")
-    assert backup["schema_version"] == 4
+    assert backup["schema_version"] == 5
     later_id = store.add_memory(
         "demo",
         memory_type="fact",

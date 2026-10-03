@@ -5,6 +5,7 @@ import io
 import secrets
 import time
 import uuid
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 import httpx
@@ -155,7 +156,14 @@ class ComfyClient:
             response.raise_for_status()
             return response.json()
 
-    async def generate(self, positive: str, negative: str) -> tuple[str, float]:
+    async def generate(
+        self,
+        positive: str,
+        negative: str,
+        *,
+        on_queued: Callable[[str], Awaitable[None]] | None = None,
+        is_cancelled: Callable[[], Awaitable[bool]] | None = None,
+    ) -> tuple[str, float]:
         if not self.settings.checkpoint_name:
             raise ComfyError("CHECKPOINT_NAME is not configured")
         started = time.perf_counter()
@@ -173,9 +181,14 @@ class ComfyClient:
                 if queued_json.get("node_errors"):
                     raise ComfyError(f"ComfyUI node errors: {queued_json['node_errors']}")
                 prompt_id = str(queued_json["prompt_id"])
+                if on_queued is not None:
+                    await on_queued(prompt_id)
                 deadline = time.monotonic() + self.settings.image_timeout_seconds
                 record: dict[str, Any] | None = None
                 while time.monotonic() < deadline:
+                    if is_cancelled is not None and await is_cancelled():
+                        await client.post(f"{self.settings.comfyui_url}/interrupt")
+                        raise ComfyError("ComfyUI generation cancelled")
                     response = await client.get(
                         f"{self.settings.comfyui_url}/history/{prompt_id}"
                     )

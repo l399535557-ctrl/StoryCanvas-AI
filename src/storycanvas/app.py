@@ -100,6 +100,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         "last_memory_error": None,
     }
     memory_lock = asyncio.Lock()
+    background_generation_tasks: set[asyncio.Task[Any]] = set()
 
     def save_memory_state() -> None:
         state.set_active_save_id(str(memory_state["active_save_id"]))
@@ -119,7 +120,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     app = FastAPI(
         title="StoryCanvas AI",
-        version="0.8.0",
+        version="0.9.0",
         description="OpenAI-compatible text-adventure gateway with local ComfyUI illustrations.",
     )
 
@@ -189,6 +190,60 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if authorization != f"Bearer {cfg.gateway_api_key}":
             raise HTTPException(status_code=401, detail="Invalid gateway API key")
 
+    async def run_generation_task(
+        task_id: str,
+        positive: str,
+        negative: str,
+    ) -> tuple[str, float]:
+        started = await asyncio.to_thread(
+            memory_store.update_generation_task,
+            task_id,
+            "running",
+        )
+        if not started:
+            raise ComfyError("generation task was cancelled before starting")
+
+        async def on_queued(prompt_id: str) -> None:
+            await asyncio.to_thread(
+                memory_store.set_generation_task_prompt_id,
+                task_id,
+                prompt_id,
+            )
+
+        async def is_cancelled() -> bool:
+            item = await asyncio.to_thread(memory_store.get_generation_task, task_id)
+            return item is None or item["status"] == "cancelled"
+
+        try:
+            filename, elapsed = await comfy.generate(
+                positive,
+                negative,
+                on_queued=on_queued,
+                is_cancelled=is_cancelled,
+            )
+        except (ComfyError, httpx.HTTPError) as exc:
+            item = await asyncio.to_thread(memory_store.get_generation_task, task_id)
+            if item is not None and item["status"] != "cancelled":
+                await asyncio.to_thread(
+                    memory_store.update_generation_task,
+                    task_id,
+                    "failed",
+                    error=f"{type(exc).__name__}: {exc}",
+                )
+            if isinstance(exc, ComfyError):
+                raise
+            raise ComfyError(f"ComfyUI request failed: {exc}") from exc
+        updated = await asyncio.to_thread(
+            memory_store.update_generation_task,
+            task_id,
+            "succeeded",
+            image_filename=filename,
+            duration_seconds=elapsed,
+        )
+        if not updated:
+            raise ComfyError("generation task was cancelled before completion")
+        return filename, elapsed
+
     app.include_router(
         build_memory_router(
             store=memory_store,
@@ -200,6 +255,64 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             ),
         )
     )
+
+    @app.post(
+        "/v1/story/tasks/{task_id}/cancel",
+        dependencies=[Depends(require_key)],
+    )
+    async def cancel_generation_task(task_id: str) -> dict[str, Any]:
+        cancelled = await asyncio.to_thread(memory_store.cancel_generation_task, task_id)
+        if not cancelled:
+            item = await asyncio.to_thread(memory_store.get_generation_task, task_id)
+            if item is None:
+                raise HTTPException(status_code=404, detail="generation task not found")
+            raise HTTPException(status_code=409, detail="generation task is already finished")
+        return {"data": await asyncio.to_thread(memory_store.get_generation_task, task_id)}
+
+    @app.post(
+        "/v1/story/tasks/{task_id}/retry",
+        dependencies=[Depends(require_key)],
+        status_code=202,
+    )
+    async def retry_generation_task(task_id: str) -> JSONResponse:
+        original = await asyncio.to_thread(memory_store.get_generation_task_payload, task_id)
+        if original is None:
+            raise HTTPException(status_code=404, detail="generation task not found")
+        if original["status"] not in {"failed", "cancelled"}:
+            raise HTTPException(status_code=409, detail="only failed or cancelled tasks can retry")
+        positive = str(original["positive_prompt"] or "")
+        negative = str(original["negative_prompt"] or "")
+        if not positive:
+            raise HTTPException(status_code=409, detail="generation prompts are unavailable")
+        retry_id = await asyncio.to_thread(
+            memory_store.create_generation_task,
+            original["save_id"],
+            request_id_context.get(),
+            retry_of_task_id=task_id,
+        )
+        await asyncio.to_thread(
+            memory_store.set_generation_task_prompts,
+            retry_id,
+            positive,
+            negative,
+        )
+
+        async def retry_worker() -> None:
+            try:
+                await run_generation_task(retry_id, positive, negative)
+            except ComfyError:
+                logger.info(
+                    "generation_retry_finished_with_error",
+                    extra={"error_type": "ComfyError"},
+                )
+
+        task = asyncio.create_task(retry_worker())
+        background_generation_tasks.add(task)
+        task.add_done_callback(background_generation_tasks.discard)
+        return JSONResponse(
+            status_code=202,
+            content={"data": await asyncio.to_thread(memory_store.get_generation_task, retry_id)},
+        )
 
     @app.get("/")
     async def root() -> dict[str, str]:
@@ -372,8 +485,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                             positive, negative = await build_visual_prompt(
                                 upstream, parsed.text or latest, answer
                             )
-                            filename, elapsed = await comfy.generate(positive, negative)
-                        except (UpstreamError, ComfyError) as task_error:
+                            await asyncio.to_thread(
+                                memory_store.set_generation_task_prompts,
+                                task_id,
+                                positive,
+                                negative,
+                            )
+                            filename, elapsed = await run_generation_task(
+                                task_id,
+                                positive,
+                                negative,
+                            )
+                        except UpstreamError as task_error:
                             await asyncio.to_thread(
                                 memory_store.update_generation_task,
                                 task_id,
@@ -381,13 +504,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                                 error=f"{type(task_error).__name__}: {task_error}",
                             )
                             raise
-                        await asyncio.to_thread(
-                            memory_store.update_generation_task,
-                            task_id,
-                            "succeeded",
-                            image_filename=filename,
-                            duration_seconds=elapsed,
-                        )
                         image_url = f"{cfg.public_base_url}/images/{filename}"
                         answer = f"{answer.rstrip()}\n\n![Generated scene]({image_url})"
                         answer += f"\n\n_Image generated locally in {elapsed:.1f}s._"

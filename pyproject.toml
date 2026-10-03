@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "storycanvas-ai"
-version = "0.8.0"
+version = "0.9.0"
 description = "A local-first text adventure gateway that pairs an OpenAI-compatible LLM with ComfyUI illustrations."
 readme = "README.md"
 requires-python = ">=3.11"

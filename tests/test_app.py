@@ -334,6 +334,35 @@ def test_generation_task_history_api(tmp_path: Path) -> None:
         assert detail.json()["data"]["request_id"] == "task-request"
 
 
+def test_generation_task_cancel_and_retry_api(tmp_path: Path) -> None:
+    settings = settings_for_test(tmp_path)
+    with TestClient(create_app(settings)) as client:
+        store = MemoryStore(settings.memory_database_path)
+        task_id = store.create_generation_task("default", "cancel-request")
+        assert store.set_generation_task_prompts(task_id, "moonlit tower", "blurry")
+        headers = {"Authorization": "Bearer gateway-test"}
+
+        cancelled = client.post(
+            f"/v1/story/tasks/{task_id}/cancel",
+            headers=headers,
+        )
+        assert cancelled.status_code == 200
+        assert cancelled.json()["data"]["status"] == "cancelled"
+        assert client.post(
+            f"/v1/story/tasks/{task_id}/cancel",
+            headers=headers,
+        ).status_code == 409
+
+        retried = client.post(
+            f"/v1/story/tasks/{task_id}/retry",
+            headers={**headers, "X-Request-ID": "retry-request"},
+        )
+        assert retried.status_code == 202
+        retry = retried.json()["data"]
+        assert retry["retry_of_task_id"] == task_id
+        assert retry["request_id"] == "retry-request"
+
+
 def test_database_backup_and_restore_api(tmp_path: Path) -> None:
     settings = settings_for_test(tmp_path)
     with TestClient(create_app(settings)) as client:

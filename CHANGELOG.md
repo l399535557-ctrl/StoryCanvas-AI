@@ -3,6 +3,28 @@
 All notable public changes are recorded here. Local-only character data, credentials, generated
 media, model weights, and adult-oriented prompt rules are intentionally excluded.
 
+## 0.9.0 - 2026-10-03
+
+### Added
+
+- Authenticated cancellation for queued or running illustration tasks.
+- Retry for failed or cancelled tasks using locally retained visual prompts.
+- Retry lineage, ComfyUI prompt IDs, and internal prompt payload storage in the local database.
+- Cooperative ComfyUI interruption checks during task polling.
+
+### Reliability and privacy
+
+- A late generation result cannot overwrite a task already marked cancelled.
+- Provider connection failures are normalized into recorded ComfyUI task failures.
+- Retry prompts stay in the ignored local SQLite database and are not returned by task list or
+  task detail APIs.
+- SQLite schema version increased to 5.
+
+### Verification
+
+- Added cancellation state, late-result protection, retained-prompt, retry-lineage, and HTTP API
+  coverage. The full suite now contains 26 passing tests.
+
 ## 0.8.0 - 2026-10-03
 
 ### Added

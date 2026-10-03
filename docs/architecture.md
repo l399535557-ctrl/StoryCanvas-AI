@@ -45,6 +45,11 @@ request ID. The database records queued, running, succeeded, failed, or cancelle
 with timestamps, duration, output filename, and a bounded error summary. On restart, unfinished
 tasks are marked interrupted so task history never remains falsely active.
 
+Failed or cancelled tasks may be retried from locally retained visual prompts. Retry lineage and
+the ComfyUI prompt ID are stored for diagnosis. Task APIs intentionally omit positive and negative
+prompts because they can contain private story details. Cancellation is cooperative: the database
+state changes first, then the active poll requests ComfyUI interruption.
+
 ### Backup and recovery
 
 The data service uses SQLite's online backup API to create consistent whole-database snapshots.

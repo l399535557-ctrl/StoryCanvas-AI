@@ -189,6 +189,17 @@ filename or safe error summary, and measured generation duration.
 Returns one generation task for diagnostics and later front-end polling. Tasks left queued or
 running during an unexpected restart are marked failed when the service starts again.
 
+## `POST /v1/story/tasks/{task_id}/cancel`
+
+Marks a queued or running task cancelled. A running ComfyUI poll observes the state and requests an
+interrupt. Completed tasks return a conflict instead of being rewritten.
+
+## `POST /v1/story/tasks/{task_id}/retry`
+
+Creates a new background task from a failed or cancelled task. The new task records
+`retry_of_task_id`; visual prompts remain private in local SQLite and are not included in task API
+responses.
+
 ## `GET /v1/story/backups`
 
 Lists whole-database SQLite snapshots stored in the configured backup directory.

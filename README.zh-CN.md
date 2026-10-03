@@ -7,9 +7,6 @@ StoryCanvas AI 是一套本地优先的多模态交互式故事生成系统。�
 ComfyUI 生成场景插图。Chatbox、SillyTavern、自研前端或其他兼容客户端均可通过
 `/v1/chat/completions` 接入。
 
-> 当前状态：公开后端 v0.11.0，28 项自动化测试通过。公开配置面向普通虚构故事，不包含
-> 成人向提示词、私人角色资料、聊天记录、模型权重或生成内容。
-
 ![StoryCanvas AI 演示图：漂浮天文台下的探索者](docs/assets/storycanvas-demo.webp)
 
 ## 系统流程
@@ -160,7 +157,7 @@ CHECKPOINT_NAME=your-sdxl-checkpoint.safetensors
 
 当前以公开仓库作为唯一开发主线，早期完整运行版暂时冻结。公开版达到后端验收条件后，
 通过适配器接回Qwen、增强SDXL、LoRA、IP-Adapter和ControlNet，并通过本地覆盖层加载
-成人向提示词、私人角色及参考图，不修改公共核心代码。
+本地专用提示词、私人角色及参考图，不修改公共核心代码。
 
 详见[公开版到完整运行版迁移约定](docs/full-edition-migration.md)。
 
@@ -170,7 +167,7 @@ CHECKPOINT_NAME=your-sdxl-checkpoint.safetensors
 
 - API密钥和真实`.env`；
 - 聊天历史和SQLite数据库；
-- 私人角色、参考图片和成人向提示词；
+- 私人角色、参考图片和本地专用提示词；
 - 生成图片、运行日志和数据库备份；
 - 模型、LoRA或其他权重文件。
 

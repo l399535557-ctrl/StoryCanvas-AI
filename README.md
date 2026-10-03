@@ -7,9 +7,6 @@ an OpenAI-compatible language model to a local ComfyUI instance, then appends a 
 the same assistant response. Chatbox, SillyTavern, a custom web client, or any compatible client can
 use it through the standard `/v1/chat/completions` API.
 
-> Status: public backend v0.11.0 with 28 passing automated tests. The public configuration is intended for general-audience fictional
-> adventures and deliberately excludes explicit sexual imagery and graphic gore.
-
 ![StoryCanvas AI demo: an explorer beneath a floating observatory](docs/assets/storycanvas-demo.webp)
 
 ## Why this project exists

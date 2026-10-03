@@ -5,6 +5,7 @@ import json
 import math
 import re
 import sqlite3
+import threading
 import time
 import uuid
 from collections.abc import Iterable, Iterator
@@ -74,23 +75,25 @@ class MemoryStore:
     def __init__(self, path: Path) -> None:
         self.path = path
         self.path.parent.mkdir(parents=True, exist_ok=True)
+        self._maintenance_lock = threading.RLock()
         self._fts_enabled = False
         self._initialize()
 
     @contextmanager
     def _connect(self) -> Iterator[sqlite3.Connection]:
-        connection = sqlite3.connect(self.path, timeout=10.0)
-        connection.row_factory = sqlite3.Row
-        connection.execute("PRAGMA foreign_keys = ON")
-        connection.execute("PRAGMA busy_timeout = 10000")
-        try:
-            yield connection
-            connection.commit()
-        except Exception:
-            connection.rollback()
-            raise
-        finally:
-            connection.close()
+        with self._maintenance_lock:
+            connection = sqlite3.connect(self.path, timeout=10.0)
+            connection.row_factory = sqlite3.Row
+            connection.execute("PRAGMA foreign_keys = ON")
+            connection.execute("PRAGMA busy_timeout = 10000")
+            try:
+                yield connection
+                connection.commit()
+            except Exception:
+                connection.rollback()
+                raise
+            finally:
+                connection.close()
 
     def _initialize(self) -> None:
         with self._connect() as connection:
@@ -1149,6 +1152,101 @@ class MemoryStore:
                 ),
             ).fetchall()
         return [dict(row) for row in rows]
+
+    @staticmethod
+    def _validated_backup_path(backup_directory: Path, filename: object) -> Path:
+        raw_name = str(filename or "").strip()
+        safe_name = Path(raw_name).name
+        if raw_name != safe_name or not safe_name.startswith("storycanvas-"):
+            raise ValueError("invalid backup filename")
+        if not safe_name.endswith(".sqlite3"):
+            raise ValueError("backup must be a .sqlite3 file")
+        return backup_directory / safe_name
+
+    def create_database_backup(
+        self,
+        backup_directory: Path,
+        *,
+        label: object = None,
+    ) -> dict[str, Any]:
+        backup_directory.mkdir(parents=True, exist_ok=True)
+        clean_label = normalize_save_id(label, "") if label else ""
+        stamp = time.strftime("%Y%m%d-%H%M%S", time.localtime())
+        suffix = f"-{clean_label}" if clean_label else ""
+        filename = f"storycanvas-{stamp}-{uuid.uuid4().hex[:8]}{suffix}.sqlite3"
+        destination = backup_directory / filename
+        with self._maintenance_lock:
+            source = sqlite3.connect(self.path, timeout=10.0)
+            target = sqlite3.connect(destination, timeout=10.0)
+            try:
+                source.backup(target)
+                result = target.execute("PRAGMA integrity_check").fetchone()
+                if result is None or result[0] != "ok":
+                    raise ValueError("database backup failed integrity check")
+                schema_version = int(target.execute("PRAGMA user_version").fetchone()[0])
+            finally:
+                target.close()
+                source.close()
+        stat = destination.stat()
+        return {
+            "filename": filename,
+            "size_bytes": stat.st_size,
+            "created_at": int(stat.st_mtime),
+            "schema_version": schema_version,
+        }
+
+    def list_database_backups(self, backup_directory: Path) -> list[dict[str, Any]]:
+        if not backup_directory.is_dir():
+            return []
+        result: list[dict[str, Any]] = []
+        for path in backup_directory.glob("storycanvas-*.sqlite3"):
+            if not path.is_file():
+                continue
+            stat = path.stat()
+            result.append(
+                {
+                    "filename": path.name,
+                    "size_bytes": stat.st_size,
+                    "created_at": int(stat.st_mtime),
+                }
+            )
+        return sorted(result, key=lambda item: (-item["created_at"], item["filename"]))
+
+    def restore_database_backup(
+        self,
+        backup_directory: Path,
+        filename: object,
+    ) -> dict[str, Any]:
+        source_path = self._validated_backup_path(backup_directory, filename)
+        if not source_path.is_file():
+            raise FileNotFoundError("database backup not found")
+        with sqlite3.connect(source_path, timeout=10.0) as validation:
+            result = validation.execute("PRAGMA integrity_check").fetchone()
+            if result is None or result[0] != "ok":
+                raise ValueError("database backup failed integrity check")
+            schema_version = int(validation.execute("PRAGMA user_version").fetchone()[0])
+            if schema_version > 4:
+                raise ValueError("database backup uses a newer unsupported schema")
+
+        safety_backup = self.create_database_backup(
+            backup_directory,
+            label="pre-restore",
+        )
+        with self._maintenance_lock:
+            source = sqlite3.connect(source_path, timeout=10.0)
+            destination = sqlite3.connect(self.path, timeout=10.0)
+            try:
+                source.backup(destination)
+                destination.commit()
+            finally:
+                destination.close()
+                source.close()
+            self._initialize()
+        return {
+            "restored_from": source_path.name,
+            "safety_backup": safety_backup["filename"],
+            "schema_version": schema_version,
+        }
 
     def stats(self, save_id: object | None = None) -> dict[str, Any]:
         with self._connect() as connection:

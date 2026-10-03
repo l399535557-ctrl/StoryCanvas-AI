@@ -65,6 +65,7 @@ class Settings:
     generated_images_dir: Path
     log_level: str = "INFO"
     log_file: Path | None = None
+    memory_backup_dir: Path | None = None
 
     @classmethod
     def load(cls, root: Path | None = None) -> Settings:
@@ -80,6 +81,10 @@ class Settings:
         log_file = Path(log_file_value) if log_file_value else None
         if log_file is not None and not log_file.is_absolute():
             log_file = project_root / log_file
+        backup_value = os.getenv("MEMORY_BACKUP_DIR", "backups").strip()
+        backup_dir = Path(backup_value) if backup_value else project_root / "backups"
+        if not backup_dir.is_absolute():
+            backup_dir = project_root / backup_dir
         return cls(
             root=project_root,
             llm_api_key=os.getenv("LLM_API_KEY", "").strip(),
@@ -122,6 +127,7 @@ class Settings:
             generated_images_dir=project_root / "generated_images",
             log_level=os.getenv("LOG_LEVEL", "INFO").strip() or "INFO",
             log_file=log_file,
+            memory_backup_dir=backup_dir,
         )
 
     def configuration_status(self) -> dict[str, bool]:

@@ -3,6 +3,28 @@
 All notable public changes are recorded here. Local-only character data, credentials, generated
 media, model weights, and adult-oriented prompt rules are intentionally excluded.
 
+## 0.8.0 - 2026-10-03
+
+### Added
+
+- Consistent whole-database SQLite snapshots using the native online backup API.
+- Backup listing, integrity verification, schema compatibility checks, and authenticated backup
+  creation and restore endpoints.
+- Automatic pre-restore safety backup so an operator can reverse an accidental restore.
+- Configurable `MEMORY_BACKUP_DIR`, excluded from public Git history by default.
+
+### Reliability
+
+- Database operations share a maintenance lock so backup and restore cannot interleave with normal
+  writes inside the process.
+- Restores reject malformed filenames, missing files, corrupt databases, and unsupported newer
+  schema versions.
+
+### Verification
+
+- Added storage and HTTP coverage for snapshot creation, mutation, restore, safety backup, and
+  restored data visibility. The full suite now contains 25 passing tests.
+
 ## 0.7.0 - 2026-10-03
 
 ### Added

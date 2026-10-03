@@ -291,3 +291,35 @@ def test_generation_task_lifecycle_and_restart_recovery(tmp_path: Path) -> None:
     assert [item["id"] for item in succeeded] == [success_id]
     assert succeeded[0]["image_filename"] == "scene.webp"
     assert reopened.stats("demo")["task_count"] == 2
+
+
+def test_database_backup_restore_and_safety_snapshot(tmp_path: Path) -> None:
+    database = tmp_path / "memory.sqlite3"
+    backups = tmp_path / "backups"
+    store = MemoryStore(database)
+    original_id = store.add_memory(
+        "demo",
+        memory_type="fact",
+        content="原始世界设定。",
+        tags=["原始"],
+        importance=5,
+    )
+    assert original_id is not None
+    backup = store.create_database_backup(backups, label="manual")
+    assert backup["schema_version"] == 4
+    later_id = store.add_memory(
+        "demo",
+        memory_type="fact",
+        content="备份后新增的设定。",
+        tags=["新增"],
+        importance=3,
+    )
+    assert later_id is not None
+    assert len(store.list_memories("demo")) == 2
+
+    restored = store.restore_database_backup(backups, backup["filename"])
+    assert restored["restored_from"] == backup["filename"]
+    assert restored["safety_backup"].endswith("-pre-restore.sqlite3")
+    memories = store.list_memories("demo")
+    assert [item["content"] for item in memories] == ["原始世界设定。"]
+    assert len(store.list_database_backups(backups)) == 2

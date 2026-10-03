@@ -58,6 +58,10 @@ set `LOG_FILE=logs/storycanvas.jsonl` when a persistent diagnostic history is re
 request IDs and timing but intentionally omit authorization headers, request bodies, story text,
 and stored memory content.
 
+Set `MEMORY_BACKUP_DIR=backups` to choose where local SQLite snapshots are stored. The directory is
+excluded from Git. Create a backup before demonstrations or upgrades; restore is an administrator
+operation and automatically preserves the current database as a `pre-restore` snapshot.
+
 ## 4. Private remote access
 
 Install Tailscale on Windows and the client device, sign both into the same Tailnet, then expose

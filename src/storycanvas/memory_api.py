@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Callable
+from pathlib import Path
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -28,6 +29,10 @@ class SaveImport(BaseModel):
     target_id: str | None = Field(default=None, max_length=120)
     target_name: str | None = Field(default=None, max_length=120)
     bundle: dict[str, Any]
+
+
+class BackupCreate(BaseModel):
+    label: str | None = Field(default=None, max_length=80)
 
 
 class MemoryCreate(BaseModel):
@@ -58,6 +63,7 @@ def build_memory_router(
     state: dict[str, Any],
     require_gateway_key: Callable[..., Any],
     default_save_id: str,
+    backup_directory: Path,
 ) -> APIRouter:
     router = APIRouter(prefix="/v1/story", tags=["story-data"])
     protected = [Depends(require_gateway_key)]
@@ -225,6 +231,42 @@ def build_memory_router(
         if item is None:
             raise HTTPException(status_code=404, detail="generation task not found")
         return {"data": item}
+
+    @router.get("/backups", dependencies=protected)
+    async def database_backups() -> dict[str, Any]:
+        return {
+            "data": await asyncio.to_thread(
+                store.list_database_backups,
+                backup_directory,
+            )
+        }
+
+    @router.post(
+        "/backups",
+        dependencies=protected,
+        status_code=status.HTTP_201_CREATED,
+    )
+    async def create_database_backup(body: BackupCreate | None = None) -> dict[str, Any]:
+        item = await asyncio.to_thread(
+            store.create_database_backup,
+            backup_directory,
+            label=body.label if body else None,
+        )
+        return {"data": item}
+
+    @router.post("/backups/{filename}/restore", dependencies=protected)
+    async def restore_database_backup(filename: str) -> dict[str, Any]:
+        try:
+            result = await asyncio.to_thread(
+                store.restore_database_backup,
+                backup_directory,
+                filename,
+            )
+        except FileNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return {"data": result}
 
     @router.get("/saves/{save_id}/memories", dependencies=protected)
     async def story_memories(

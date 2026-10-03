@@ -45,6 +45,13 @@ request ID. The database records queued, running, succeeded, failed, or cancelle
 with timestamps, duration, output filename, and a bounded error summary. On restart, unfinished
 tasks are marked interrupted so task history never remains falsely active.
 
+### Backup and recovery
+
+The data service uses SQLite's online backup API to create consistent whole-database snapshots.
+Every snapshot passes `integrity_check`. Restore accepts only safe filenames and compatible schema
+versions, serializes maintenance against in-process database work, and creates a pre-restore safety
+snapshot before changing the live database.
+
 ### ComfyUI
 
 The default workflow uses only Core nodes:

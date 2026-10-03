@@ -189,6 +189,22 @@ filename or safe error summary, and measured generation duration.
 Returns one generation task for diagnostics and later front-end polling. Tasks left queued or
 running during an unexpected restart are marked failed when the service starts again.
 
+## `GET /v1/story/backups`
+
+Lists whole-database SQLite snapshots stored in the configured backup directory.
+
+## `POST /v1/story/backups`
+
+Creates a transactionally consistent database snapshot and verifies it with SQLite
+`integrity_check`. An optional JSON body such as `{"label": "before-demo"}` adds a safe label to
+the generated filename.
+
+## `POST /v1/story/backups/{filename}/restore`
+
+Restores a verified compatible snapshot. Before replacement, the gateway automatically creates a
+`pre-restore` safety snapshot of the current database. This authenticated maintenance operation
+should only be exposed to a trusted local administrator.
+
 ## `GET /images/{filename}`
 
 Serves generated WebP files. Only a basename ending in `.webp` is accepted.

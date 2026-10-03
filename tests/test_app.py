@@ -332,3 +332,41 @@ def test_generation_task_history_api(tmp_path: Path) -> None:
         detail = client.get(f"/v1/story/tasks/{task_id}", headers=headers)
         assert detail.status_code == 200
         assert detail.json()["data"]["request_id"] == "task-request"
+
+
+def test_database_backup_and_restore_api(tmp_path: Path) -> None:
+    settings = settings_for_test(tmp_path)
+    with TestClient(create_app(settings)) as client:
+        headers = {"Authorization": "Bearer gateway-test"}
+        first = client.post(
+            "/v1/story/saves/default/memories",
+            headers=headers,
+            json={"type": "fact", "content": "备份前的设定。", "importance": 5},
+        )
+        assert first.status_code == 201
+        backup = client.post(
+            "/v1/story/backups",
+            headers=headers,
+            json={"label": "api-test"},
+        )
+        assert backup.status_code == 201
+        filename = backup.json()["data"]["filename"]
+        second = client.post(
+            "/v1/story/saves/default/memories",
+            headers=headers,
+            json={"type": "fact", "content": "备份后的设定。", "importance": 3},
+        )
+        assert second.status_code == 201
+
+        restored = client.post(
+            f"/v1/story/backups/{filename}/restore",
+            headers=headers,
+        )
+        assert restored.status_code == 200
+        listed = client.get(
+            "/v1/story/saves/default/memories",
+            headers=headers,
+        ).json()["data"]
+        assert [item["content"] for item in listed] == ["备份前的设定。"]
+        backups = client.get("/v1/story/backups", headers=headers)
+        assert len(backups.json()["data"]) == 2

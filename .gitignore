@@ -17,6 +17,7 @@ state.json
 story_memory.sqlite3
 story_memory.sqlite3-shm
 story_memory.sqlite3-wal
+backups/
 .local/
 models/
 *.safetensors

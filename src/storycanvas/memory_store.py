@@ -690,6 +690,201 @@ class MemoryStore:
             )
         return cursor.rowcount > 0
 
+    def export_save(
+        self,
+        save_id: object,
+        *,
+        include_archived: bool = False,
+    ) -> dict[str, Any]:
+        """Return a portable, versioned JSON representation of one story save."""
+        normalized = normalize_save_id(save_id)
+        with self._connect() as connection:
+            save = connection.execute(
+                """
+                SELECT id, name, created_at, updated_at, archived_at
+                FROM story_saves
+                WHERE id = ?
+                """,
+                (normalized,),
+            ).fetchone()
+            if save is None:
+                raise KeyError("story save not found")
+            turns = connection.execute(
+                """
+                SELECT id, user_text, assistant_text, created_at
+                FROM story_turns
+                WHERE save_id = ?
+                ORDER BY id
+                """,
+                (normalized,),
+            ).fetchall()
+            memories = connection.execute(
+                """
+                SELECT id, memory_type, content, tags_json, entities_json,
+                       importance, story_time, source_turn_id, created_at,
+                       updated_at, archived_at
+                FROM memories
+                WHERE save_id = ? AND (? = 1 OR archived_at IS NULL)
+                ORDER BY id
+                """,
+                (normalized, 1 if include_archived else 0),
+            ).fetchall()
+
+        exported_memories: list[dict[str, Any]] = []
+        for row in memories:
+            item = dict(row)
+            item["tags"] = json.loads(item.pop("tags_json") or "[]")
+            item["entities"] = json.loads(item.pop("entities_json") or "[]")
+            exported_memories.append(item)
+        return {
+            "format": "storycanvas-save",
+            "version": 1,
+            "exported_at": int(time.time()),
+            "save": dict(save),
+            "turns": [dict(row) for row in turns],
+            "memories": exported_memories,
+        }
+
+    def import_save(
+        self,
+        bundle: dict[str, Any],
+        *,
+        target_save_id: object = None,
+        target_name: object = None,
+    ) -> dict[str, Any]:
+        """Atomically import a portable save bundle without overwriting existing data."""
+        if bundle.get("format") != "storycanvas-save" or bundle.get("version") != 1:
+            raise ValueError("unsupported story save bundle")
+        source_save = bundle.get("save")
+        turns = bundle.get("turns", [])
+        memories = bundle.get("memories", [])
+        if not isinstance(source_save, dict):
+            raise ValueError("bundle save metadata is required")
+        if not isinstance(turns, list) or len(turns) > 10000:
+            raise ValueError("bundle turns must be a list with at most 10000 items")
+        if not isinstance(memories, list) or len(memories) > 20000:
+            raise ValueError("bundle memories must be a list with at most 20000 items")
+
+        normalized = normalize_save_id(target_save_id or source_save.get("id"))
+        clean_name = _clean_text(target_name or source_save.get("name") or normalized, 120)
+        now = int(time.time())
+        try:
+            created_at = int(source_save.get("created_at") or now)
+        except (TypeError, ValueError):
+            created_at = now
+
+        with self._connect() as connection:
+            exists = connection.execute(
+                "SELECT 1 FROM story_saves WHERE id = ?",
+                (normalized,),
+            ).fetchone()
+            if exists is not None:
+                raise ValueError("target story save already exists")
+            connection.execute(
+                """
+                INSERT INTO story_saves(id, name, created_at, updated_at, archived_at)
+                VALUES (?, ?, ?, ?, NULL)
+                """,
+                (normalized, clean_name or normalized, created_at, now),
+            )
+
+            turn_id_map: dict[int, int] = {}
+            for item in turns:
+                if not isinstance(item, dict):
+                    raise ValueError("invalid turn in story save bundle")
+                user_text = _clean_text(item.get("user_text"), 12000)
+                assistant_text = _clean_text(item.get("assistant_text"), 24000)
+                try:
+                    item_created_at = int(item.get("created_at") or now)
+                except (TypeError, ValueError):
+                    item_created_at = now
+                cursor = connection.execute(
+                    """
+                    INSERT INTO story_turns(save_id, user_text, assistant_text, created_at)
+                    VALUES (?, ?, ?, ?)
+                    """,
+                    (normalized, user_text, assistant_text, item_created_at),
+                )
+                try:
+                    old_id = int(item.get("id"))
+                except (TypeError, ValueError):
+                    old_id = 0
+                if old_id:
+                    turn_id_map[old_id] = int(cursor.lastrowid)
+
+            imported_memory_count = 0
+            for item in memories:
+                if not isinstance(item, dict):
+                    raise ValueError("invalid memory in story save bundle")
+                clean_type = _clean_text(item.get("memory_type"), 32).casefold() or "event"
+                clean_content = _clean_text(item.get("content"), 1000)
+                if not clean_content:
+                    continue
+                clean_tags = _clean_list(item.get("tags"))
+                clean_entities = _clean_list(item.get("entities"), limit=10)
+                try:
+                    importance = max(1, min(5, int(item.get("importance", 3))))
+                except (TypeError, ValueError):
+                    importance = 3
+                story_time = _clean_text(item.get("story_time"), 120) or None
+                fingerprint = hashlib.sha256(
+                    f"{clean_type}|{clean_content.casefold()}".encode()
+                ).hexdigest()
+                try:
+                    old_source_turn_id = int(item.get("source_turn_id"))
+                except (TypeError, ValueError):
+                    old_source_turn_id = 0
+                source_turn_id = turn_id_map.get(old_source_turn_id)
+                archived_at = item.get("archived_at")
+                try:
+                    archived_at = int(archived_at) if archived_at is not None else None
+                except (TypeError, ValueError):
+                    archived_at = None
+                cursor = connection.execute(
+                    """
+                    INSERT OR IGNORE INTO memories(
+                        save_id, memory_type, content, tags_json, entities_json,
+                        importance, story_time, source_turn_id, fingerprint,
+                        created_at, updated_at, archived_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        normalized,
+                        clean_type,
+                        clean_content,
+                        json.dumps(clean_tags, ensure_ascii=False),
+                        json.dumps(clean_entities, ensure_ascii=False),
+                        importance,
+                        story_time,
+                        source_turn_id,
+                        fingerprint,
+                        now,
+                        now,
+                        archived_at,
+                    ),
+                )
+                imported_memory_count += cursor.rowcount
+
+        return {
+            "save_id": normalized,
+            "name": clean_name or normalized,
+            "turn_count": len(turns),
+            "memory_count": imported_memory_count,
+        }
+
+    def copy_save(
+        self,
+        source_save_id: object,
+        target_save_id: object,
+        target_name: object,
+    ) -> dict[str, Any]:
+        bundle = self.export_save(source_save_id, include_archived=False)
+        return self.import_save(
+            bundle,
+            target_save_id=target_save_id,
+            target_name=target_name,
+        )
+
     def stats(self, save_id: object | None = None) -> dict[str, Any]:
         with self._connect() as connection:
             if save_id is None:

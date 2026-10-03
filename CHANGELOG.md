@@ -3,6 +3,24 @@
 All notable public changes are recorded here. Local-only character data, credentials, generated
 media, model weights, and adult-oriented prompt rules are intentionally excluded.
 
+## 0.4.0 - 2026-10-03
+
+### Added
+
+- Versioned JSON export for a complete story save, including turns and durable memories.
+- Atomic story-save import with turn-to-memory source relationship remapping.
+- Save duplication for safe branching and alternate story development.
+- Optional inclusion of archived memories in backup exports.
+- API and storage regression coverage for export, import, copy, relationship preservation, RAG
+  availability after import, and collision protection.
+
+### Safety and data integrity
+
+- Imports never overwrite an existing save ID and return a conflict instead.
+- Import validation limits bundles to 10,000 turns and 20,000 memories.
+- A failed import is rolled back as one SQLite transaction, so partial saves are not retained.
+- Copies include active story data while leaving archived memories behind by default.
+
 ## 0.3.0 - 2026-10-03
 
 ### Added

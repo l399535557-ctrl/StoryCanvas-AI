@@ -168,3 +168,57 @@ def test_data_management_is_recoverable_and_save_scoped(tmp_path: Path) -> None:
     assert store.list_saves() == []
     assert store.restore_save("demo") is True
     assert store.list_saves()[0]["id"] == "demo"
+
+
+def test_save_export_import_and_copy_preserve_relationships(tmp_path: Path) -> None:
+    store = MemoryStore(tmp_path / "memory.sqlite3")
+    store.ensure_save("source", "源故事")
+    turn_id = store.record_turn("source", "推开钟楼门", "林岚发现了月纹钥匙。")
+    memory_id = store.add_memory(
+        "source",
+        memory_type="event",
+        content="林岚在钟楼发现月纹钥匙。",
+        tags=["钟楼", "钥匙"],
+        entities=["林岚"],
+        importance=5,
+        source_turn_id=turn_id,
+    )
+    assert memory_id is not None
+    archived_id = store.add_memory(
+        "source",
+        memory_type="note",
+        content="这是一条已归档的旧记忆。",
+        importance=1,
+    )
+    assert archived_id is not None
+    assert store.archive_memory("source", archived_id)
+
+    bundle = store.export_save("source", include_archived=True)
+    imported = store.import_save(
+        bundle,
+        target_save_id="imported",
+        target_name="导入故事",
+    )
+    assert imported == {
+        "save_id": "imported",
+        "name": "导入故事",
+        "turn_count": 1,
+        "memory_count": 2,
+    }
+    imported_turn = store.list_turns("imported")[0]
+    imported_memories = store.list_memories("imported", include_archived=True)
+    active_memory = next(item for item in imported_memories if item["archived_at"] is None)
+    assert active_memory["source_turn_id"] == imported_turn["id"]
+    assert store.retrieve("imported", "林岚回到钟楼寻找钥匙")[0].content.startswith("林岚")
+
+    copied = store.copy_save("source", "copy", "故事副本")
+    assert copied["turn_count"] == 1
+    assert copied["memory_count"] == 1
+    assert len(store.list_memories("copy", include_archived=True)) == 1
+
+    try:
+        store.import_save(bundle, target_save_id="imported")
+    except ValueError as exc:
+        assert "already exists" in str(exc)
+    else:
+        raise AssertionError("import must not overwrite an existing save")

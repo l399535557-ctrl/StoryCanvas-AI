@@ -19,6 +19,17 @@ class SaveUpdate(BaseModel):
     name: str = Field(min_length=1, max_length=120)
 
 
+class SaveCopy(BaseModel):
+    id: str = Field(min_length=1, max_length=120)
+    name: str = Field(min_length=1, max_length=120)
+
+
+class SaveImport(BaseModel):
+    target_id: str | None = Field(default=None, max_length=120)
+    target_name: str | None = Field(default=None, max_length=120)
+    bundle: dict[str, Any]
+
+
 class MemoryCreate(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
@@ -117,6 +128,58 @@ def build_memory_router(
             raise HTTPException(status_code=409, detail="story save is not archived")
         await asyncio.to_thread(store.restore_save, normalized)
         return {"save_id": normalized, "archived": False}
+
+    @router.get("/saves/{save_id}/export", dependencies=protected)
+    async def export_story_save(
+        save_id: str,
+        include_archived: Annotated[bool, Query()] = False,
+    ) -> dict[str, Any]:
+        normalized, _ = await require_save(save_id)
+        return await asyncio.to_thread(
+            store.export_save,
+            normalized,
+            include_archived=include_archived,
+        )
+
+    @router.post(
+        "/saves/import",
+        dependencies=protected,
+        status_code=status.HTTP_201_CREATED,
+    )
+    async def import_story_save(body: SaveImport) -> dict[str, Any]:
+        try:
+            result = await asyncio.to_thread(
+                store.import_save,
+                body.bundle,
+                target_save_id=body.target_id,
+                target_name=body.target_name,
+            )
+        except ValueError as exc:
+            message = str(exc)
+            code = 409 if "already exists" in message else 400
+            raise HTTPException(status_code=code, detail=message) from exc
+        return {"data": result}
+
+    @router.post(
+        "/saves/{save_id}/copy",
+        dependencies=protected,
+        status_code=status.HTTP_201_CREATED,
+    )
+    async def copy_story_save(save_id: str, body: SaveCopy) -> dict[str, Any]:
+        normalized, _ = await require_save(save_id)
+        target_id = normalize_save_id(body.id, default_save_id)
+        try:
+            result = await asyncio.to_thread(
+                store.copy_save,
+                normalized,
+                target_id,
+                body.name,
+            )
+        except ValueError as exc:
+            message = str(exc)
+            code = 409 if "already exists" in message else 400
+            raise HTTPException(status_code=code, detail=message) from exc
+        return {"data": result}
 
     @router.get("/saves/{save_id}/turns", dependencies=protected)
     async def story_turns(

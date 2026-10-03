@@ -185,3 +185,56 @@ def test_memory_management_api(tmp_path: Path) -> None:
         assert client.post(
             "/v1/story/saves/archive-me/restore", headers=headers
         ).status_code == 200
+
+
+def test_story_save_export_import_and_copy_api(tmp_path: Path) -> None:
+    with TestClient(create_app(settings_for_test(tmp_path))) as client:
+        headers = {"Authorization": "Bearer gateway-test"}
+        assert client.post(
+            "/v1/story/saves",
+            headers=headers,
+            json={"id": "source", "name": "源故事"},
+        ).status_code == 201
+        assert client.post(
+            "/v1/story/saves/source/memories",
+            headers=headers,
+            json={
+                "type": "fact",
+                "content": "月纹钥匙可以开启钟楼档案室。",
+                "tags": ["钥匙", "钟楼"],
+                "importance": 5,
+            },
+        ).status_code == 201
+
+        exported = client.get(
+            "/v1/story/saves/source/export",
+            headers=headers,
+        )
+        assert exported.status_code == 200
+        assert exported.json()["format"] == "storycanvas-save"
+
+        imported = client.post(
+            "/v1/story/saves/import",
+            headers=headers,
+            json={
+                "target_id": "imported",
+                "target_name": "导入故事",
+                "bundle": exported.json(),
+            },
+        )
+        assert imported.status_code == 201
+        assert imported.json()["data"]["memory_count"] == 1
+        duplicate_import = client.post(
+            "/v1/story/saves/import",
+            headers=headers,
+            json={"target_id": "imported", "bundle": exported.json()},
+        )
+        assert duplicate_import.status_code == 409
+
+        copied = client.post(
+            "/v1/story/saves/source/copy",
+            headers=headers,
+            json={"id": "copy", "name": "故事副本"},
+        )
+        assert copied.status_code == 201
+        assert copied.json()["data"]["save_id"] == "copy"

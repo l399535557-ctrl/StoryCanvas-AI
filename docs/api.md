@@ -88,6 +88,40 @@ fallback for requests that do not specify a save.
 
 Restores an archived save with its turns and memories intact.
 
+## `GET /v1/story/saves/{save_id}/export`
+
+Exports one save as a portable, versioned JSON bundle containing save metadata, turns, and active
+memories. Pass `include_archived=true` when creating a full backup that must also contain archived
+memories.
+
+## `POST /v1/story/saves/import`
+
+Imports an exported bundle as a new save. The operation is atomic and never overwrites an existing
+save ID. `target_id` and `target_name` may be supplied to rename the imported copy.
+
+```json
+{
+  "target_id": "observatory-import",
+  "target_name": "Imported Observatory",
+  "bundle": {
+    "format": "storycanvas-save",
+    "version": 1,
+    "save": {},
+    "turns": [],
+    "memories": []
+  }
+}
+```
+
+## `POST /v1/story/saves/{save_id}/copy`
+
+Creates a new branch from an existing save. Active turns and memories are copied; archived memories
+remain excluded.
+
+```json
+{"id": "observatory-branch", "name": "Observatory Alternate Route"}
+```
+
 ## `GET /v1/story/saves/{save_id}/turns`
 
 Returns newest-first story turns. Use `limit` (1-200) and `offset` for pagination.

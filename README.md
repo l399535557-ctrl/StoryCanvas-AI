@@ -166,6 +166,7 @@ Review [SECURITY.md](SECURITY.md) before exposing the service to another device.
 - [Architecture](docs/architecture.md)
 - [Windows deployment](docs/deployment-windows.md)
 - [HTTP API](docs/api.md)
+- [Full-edition migration contract](docs/full-edition-migration.md)
 - [Resume/project description](docs/resume.md)
 - [Contributing](CONTRIBUTING.md)
 

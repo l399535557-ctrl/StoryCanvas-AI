@@ -24,6 +24,13 @@ media, model weights, and adult-oriented prompt rules are intentionally excluded
 - Added archive-content, manifest-privacy, image-packaging, and HTTP download tests. The full suite
   now contains 28 passing tests.
 
+### Documentation
+
+- Established the public repository as the single current development line and froze the legacy
+  full runtime until backend acceptance.
+- Added a migration contract for stable APIs, forward-only database changes, image-backend
+  adapters, private local overlays, pre-migration backups, and full-runtime regression checks.
+
 ## 0.9.0 - 2026-10-03
 
 ### Added

@@ -98,6 +98,12 @@ Exports one save as a portable, versioned JSON bundle containing save metadata, 
 memories. Pass `include_archived=true` when creating a full backup that must also contain archived
 memories.
 
+## `GET /v1/story/saves/{save_id}/publication`
+
+Downloads a presentation-ready ZIP containing chronological `story.md`, a privacy-safe
+`manifest.json`, and available successful WebP illustrations under `images/`. Long-term memories,
+internal generation prompts, credentials, and archived records are not included.
+
 ## `POST /v1/story/saves/import`
 
 Imports an exported bundle as a new save. The operation is atomic and never overwrites an existing

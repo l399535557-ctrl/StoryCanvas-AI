@@ -3,6 +3,27 @@
 All notable public changes are recorded here. Local-only character data, credentials, generated
 media, model weights, and adult-oriented prompt rules are intentionally excluded.
 
+## 0.10.0 - 2026-10-03
+
+### Added
+
+- Authenticated publication export for a story save as a self-contained ZIP archive.
+- Generated `story.md`, a privacy-safe `manifest.json`, and a local `images/` directory containing
+  available successful WebP illustrations.
+- Stable chronological story sections and a separate illustration gallery for portable review.
+
+### Privacy and portability
+
+- Publication archives exclude long-term memory records, internal positive and negative prompts,
+  credentials, and archived data.
+- Remote image links embedded in assistant text are removed and replaced by packaged local image
+  references when an output file is available.
+
+### Verification
+
+- Added archive-content, manifest-privacy, image-packaging, and HTTP download tests. The full suite
+  now contains 28 passing tests.
+
 ## 0.9.0 - 2026-10-03
 
 ### Added

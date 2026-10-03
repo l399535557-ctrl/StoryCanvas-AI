@@ -5,10 +5,11 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from pydantic import BaseModel, ConfigDict, Field
 
 from .memory_store import MemoryStore, normalize_save_id
+from .story_export import build_story_archive
 
 
 class SaveCreate(BaseModel):
@@ -64,6 +65,7 @@ def build_memory_router(
     require_gateway_key: Callable[..., Any],
     default_save_id: str,
     backup_directory: Path,
+    generated_images_dir: Path,
 ) -> APIRouter:
     router = APIRouter(prefix="/v1/story", tags=["story-data"])
     protected = [Depends(require_gateway_key)]
@@ -145,6 +147,21 @@ def build_memory_router(
             store.export_save,
             normalized,
             include_archived=include_archived,
+        )
+
+    @router.get("/saves/{save_id}/publication", dependencies=protected)
+    async def export_story_publication(save_id: str) -> Response:
+        normalized, _ = await require_save(save_id)
+        filename, payload = await asyncio.to_thread(
+            build_story_archive,
+            store,
+            normalized,
+            generated_images_dir,
+        )
+        return Response(
+            content=payload,
+            media_type="application/zip",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
         )
 
     @router.post(

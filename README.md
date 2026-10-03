@@ -34,6 +34,8 @@ instructions. StoryCanvas separates those responsibilities:
 - Automatic local memory extraction without an additional model request.
 - Save selection through request fields, an HTTP header, or chat commands.
 - Recoverable save and memory management with rename/edit, archive/restore, and paginated history.
+- Portable save migration, verified database backups, and privacy-safe story publication ZIPs.
+- Persistent illustration tasks with request tracing, cancellation, retry, and restart recovery.
 - Structured visual direction for identity, action, camera, depth, lighting, and materials.
 - Single-frame action constraints and robust JSON extraction with deterministic fallback.
 - Tiled VAE decoding and batch size 1 for constrained GPUs.

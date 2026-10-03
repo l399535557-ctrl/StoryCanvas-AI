@@ -57,6 +57,12 @@ Every snapshot passes `integrity_check`. Restore accepts only safe filenames and
 versions, serializes maintenance against in-process database work, and creates a pre-restore safety
 snapshot before changing the live database.
 
+### Story publication export
+
+A separate publication exporter converts chronological turns into Markdown and packages successful
+local WebP illustrations into one ZIP. Its manifest contains only delivery metadata and deliberately
+excludes RAG memories, internal prompts, credentials, and archived records.
+
 ### ComfyUI
 
 The default workflow uses only Core nodes:

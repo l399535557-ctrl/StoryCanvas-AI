@@ -120,7 +120,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     app = FastAPI(
         title="StoryCanvas AI",
-        version="0.9.0",
+        version="0.10.0",
         description="OpenAI-compatible text-adventure gateway with local ComfyUI illustrations.",
     )
 
@@ -253,6 +253,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             backup_directory=(
                 cfg.memory_backup_dir or cfg.memory_database_path.parent / "backups"
             ),
+            generated_images_dir=cfg.generated_images_dir,
         )
     )
 

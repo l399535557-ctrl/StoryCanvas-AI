@@ -5,6 +5,7 @@ from fastapi.testclient import TestClient
 
 from storycanvas.app import create_app
 from storycanvas.config import Settings
+from storycanvas.memory_store import MemoryStore
 
 
 def settings_for_test(tmp_path: Path) -> Settings:
@@ -307,3 +308,27 @@ def test_memory_conflict_and_supersede_api(tmp_path: Path) -> None:
             headers=headers,
         ).json()["data"]
         assert {item["status"] for item in listed} == {"active", "superseded"}
+
+
+def test_generation_task_history_api(tmp_path: Path) -> None:
+    settings = settings_for_test(tmp_path)
+    with TestClient(create_app(settings)) as client:
+        store = MemoryStore(settings.memory_database_path)
+        task_id = store.create_generation_task("default", "task-request")
+        assert store.update_generation_task(task_id, "running")
+        assert store.update_generation_task(
+            task_id,
+            "succeeded",
+            image_filename="result.webp",
+            duration_seconds=2.5,
+        )
+        headers = {"Authorization": "Bearer gateway-test"}
+        listed = client.get(
+            "/v1/story/tasks?save_id=default&status=succeeded",
+            headers=headers,
+        )
+        assert listed.status_code == 200
+        assert listed.json()["data"][0]["id"] == task_id
+        detail = client.get(f"/v1/story/tasks/{task_id}", headers=headers)
+        assert detail.status_code == 200
+        assert detail.json()["data"]["request_id"] == "task-request"

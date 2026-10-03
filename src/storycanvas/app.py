@@ -119,7 +119,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     app = FastAPI(
         title="StoryCanvas AI",
-        version="0.6.0",
+        version="0.7.0",
         description="OpenAI-compatible text-adventure gateway with local ComfyUI illustrations.",
     )
 
@@ -355,10 +355,36 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 if generate:
                     combined_policy = check_public_image_policy(f"{parsed.text}\n{answer}")
                     if combined_policy.allowed:
-                        positive, negative = await build_visual_prompt(
-                            upstream, parsed.text or latest, answer
+                        task_id = await asyncio.to_thread(
+                            memory_store.create_generation_task,
+                            save_id,
+                            request_id_context.get(),
                         )
-                        filename, elapsed = await comfy.generate(positive, negative)
+                        await asyncio.to_thread(
+                            memory_store.update_generation_task,
+                            task_id,
+                            "running",
+                        )
+                        try:
+                            positive, negative = await build_visual_prompt(
+                                upstream, parsed.text or latest, answer
+                            )
+                            filename, elapsed = await comfy.generate(positive, negative)
+                        except (UpstreamError, ComfyError) as task_error:
+                            await asyncio.to_thread(
+                                memory_store.update_generation_task,
+                                task_id,
+                                "failed",
+                                error=f"{type(task_error).__name__}: {task_error}",
+                            )
+                            raise
+                        await asyncio.to_thread(
+                            memory_store.update_generation_task,
+                            task_id,
+                            "succeeded",
+                            image_filename=filename,
+                            duration_seconds=elapsed,
+                        )
                         image_url = f"{cfg.public_base_url}/images/{filename}"
                         answer = f"{answer.rstrip()}\n\n![Generated scene]({image_url})"
                         answer += f"\n\n_Image generated locally in {elapsed:.1f}s._"

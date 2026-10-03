@@ -58,7 +58,7 @@ def test_memory_store_migrates_version_one_database(tmp_path: Path) -> None:
     assert "archived_at" in memory_columns
     assert "status" in memory_columns
     assert "supersedes_memory_id" in memory_columns
-    assert user_version == 3
+    assert user_version == 4
 
 
 def test_memory_store_isolates_saves_and_retrieves_chinese(tmp_path: Path) -> None:
@@ -263,3 +263,31 @@ def test_conflicted_and_superseded_memories_are_excluded_from_rag(tmp_path: Path
     imported_replacement = next(item for item in imported if item["status"] == "active")
     imported_old = next(item for item in imported if item["status"] == "superseded")
     assert imported_replacement["supersedes_memory_id"] == imported_old["id"]
+
+
+def test_generation_task_lifecycle_and_restart_recovery(tmp_path: Path) -> None:
+    database = tmp_path / "memory.sqlite3"
+    store = MemoryStore(database)
+    task_id = store.create_generation_task("demo", "request-001")
+    assert store.get_generation_task(task_id)["status"] == "queued"
+    assert store.update_generation_task(task_id, "running")
+    running = store.get_generation_task(task_id)
+    assert running["started_at"] is not None
+
+    reopened = MemoryStore(database)
+    interrupted = reopened.get_generation_task(task_id)
+    assert interrupted["status"] == "failed"
+    assert interrupted["error"] == "interrupted by service restart"
+
+    success_id = reopened.create_generation_task("demo", "request-002")
+    assert reopened.update_generation_task(success_id, "running")
+    assert reopened.update_generation_task(
+        success_id,
+        "succeeded",
+        image_filename="scene.webp",
+        duration_seconds=3.25,
+    )
+    succeeded = reopened.list_generation_tasks(save_id="demo", status="succeeded")
+    assert [item["id"] for item in succeeded] == [success_id]
+    assert succeeded[0]["image_filename"] == "scene.webp"
+    assert reopened.stats("demo")["task_count"] == 2

@@ -38,6 +38,13 @@ The provider performs two logically separate jobs:
 
 This separation prevents raw conversation history from becoming an unstructured diffusion prompt.
 
+### Persistent generation tasks
+
+Every accepted illustration job receives a durable task ID linked to its story save and HTTP
+request ID. The database records queued, running, succeeded, failed, or cancelled state together
+with timestamps, duration, output filename, and a bounded error summary. On restart, unfinished
+tasks are marked interrupted so task history never remains falsely active.
+
 ### ComfyUI
 
 The default workflow uses only Core nodes:

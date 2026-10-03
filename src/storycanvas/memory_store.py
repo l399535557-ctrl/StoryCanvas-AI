@@ -6,6 +6,7 @@ import math
 import re
 import sqlite3
 import time
+import uuid
 from collections.abc import Iterable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -140,6 +141,24 @@ class MemoryStore:
                     ON memories(save_id, updated_at DESC);
                 CREATE INDEX IF NOT EXISTS idx_memories_save_type
                     ON memories(save_id, memory_type);
+
+                CREATE TABLE IF NOT EXISTS generation_tasks (
+                    id TEXT PRIMARY KEY,
+                    save_id TEXT NOT NULL REFERENCES story_saves(id) ON DELETE CASCADE,
+                    request_id TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    image_filename TEXT,
+                    error TEXT,
+                    created_at INTEGER NOT NULL,
+                    started_at INTEGER,
+                    finished_at INTEGER,
+                    duration_seconds REAL
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_generation_tasks_save_created
+                    ON generation_tasks(save_id, created_at DESC);
+                CREATE INDEX IF NOT EXISTS idx_generation_tasks_status
+                    ON generation_tasks(status, created_at DESC);
                 """
             )
             save_columns = {
@@ -162,7 +181,16 @@ class MemoryStore:
                 connection.execute(
                     "ALTER TABLE memories ADD COLUMN supersedes_memory_id INTEGER"
                 )
-            connection.execute("PRAGMA user_version = 3")
+            connection.execute("PRAGMA user_version = 4")
+            connection.execute(
+                """
+                UPDATE generation_tasks
+                SET status = 'failed', error = 'interrupted by service restart',
+                    finished_at = ?
+                WHERE status IN ('queued', 'running')
+                """,
+                (int(time.time()),),
+            )
             try:
                 connection.executescript(
                     """
@@ -1023,6 +1051,105 @@ class MemoryStore:
             target_name=target_name,
         )
 
+    def create_generation_task(self, save_id: object, request_id: object) -> str:
+        normalized = self.ensure_save(save_id)
+        task_id = uuid.uuid4().hex
+        now = int(time.time())
+        with self._connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO generation_tasks(
+                    id, save_id, request_id, status, created_at
+                ) VALUES (?, ?, ?, 'queued', ?)
+                """,
+                (task_id, normalized, _clean_text(request_id, 64) or "-", now),
+            )
+        return task_id
+
+    def update_generation_task(
+        self,
+        task_id: str,
+        status: str,
+        *,
+        image_filename: object = None,
+        error: object = None,
+        duration_seconds: float | None = None,
+    ) -> bool:
+        clean_status = str(status).strip().casefold()
+        if clean_status not in {"queued", "running", "succeeded", "failed", "cancelled"}:
+            raise ValueError("unsupported generation task status")
+        now = int(time.time())
+        started_at = now if clean_status == "running" else None
+        finished_at = now if clean_status in {"succeeded", "failed", "cancelled"} else None
+        with self._connect() as connection:
+            cursor = connection.execute(
+                """
+                UPDATE generation_tasks
+                SET status = ?,
+                    image_filename = COALESCE(?, image_filename),
+                    error = ?,
+                    started_at = COALESCE(started_at, ?),
+                    finished_at = ?,
+                    duration_seconds = COALESCE(?, duration_seconds)
+                WHERE id = ?
+                """,
+                (
+                    clean_status,
+                    _clean_text(image_filename, 255) or None,
+                    _clean_text(error, 1000) or None,
+                    started_at,
+                    finished_at,
+                    duration_seconds,
+                    _clean_text(task_id, 64),
+                ),
+            )
+        return cursor.rowcount > 0
+
+    def get_generation_task(self, task_id: object) -> dict[str, Any] | None:
+        with self._connect() as connection:
+            row = connection.execute(
+                """
+                SELECT id, save_id, request_id, status, image_filename, error,
+                       created_at, started_at, finished_at, duration_seconds
+                FROM generation_tasks WHERE id = ?
+                """,
+                (_clean_text(task_id, 64),),
+            ).fetchone()
+        return dict(row) if row else None
+
+    def list_generation_tasks(
+        self,
+        *,
+        save_id: object = None,
+        status: str | None = None,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> list[dict[str, Any]]:
+        normalized = normalize_save_id(save_id) if save_id is not None else None
+        clean_status = status.strip().casefold() if status else None
+        if clean_status not in {None, "queued", "running", "succeeded", "failed", "cancelled"}:
+            raise ValueError("unsupported generation task status")
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT id, save_id, request_id, status, image_filename, error,
+                       created_at, started_at, finished_at, duration_seconds
+                FROM generation_tasks
+                WHERE (? IS NULL OR save_id = ?) AND (? IS NULL OR status = ?)
+                ORDER BY created_at DESC, id DESC
+                LIMIT ? OFFSET ?
+                """,
+                (
+                    normalized,
+                    normalized,
+                    clean_status,
+                    clean_status,
+                    max(1, min(500, int(limit))),
+                    max(0, int(offset)),
+                ),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
     def stats(self, save_id: object | None = None) -> dict[str, Any]:
         with self._connect() as connection:
             if save_id is None:
@@ -1048,6 +1175,14 @@ class MemoryStore:
                 )
                 turn_count = int(
                     connection.execute("SELECT COUNT(*) FROM story_turns").fetchone()[0]
+                )
+                task_count = int(
+                    connection.execute("SELECT COUNT(*) FROM generation_tasks").fetchone()[0]
+                )
+                failed_task_count = int(
+                    connection.execute(
+                        "SELECT COUNT(*) FROM generation_tasks WHERE status = 'failed'"
+                    ).fetchone()[0]
                 )
             else:
                 normalized = normalize_save_id(save_id)
@@ -1092,6 +1227,21 @@ class MemoryStore:
                         "SELECT COUNT(*) FROM story_turns WHERE save_id = ?", (normalized,)
                     ).fetchone()[0]
                 )
+                task_count = int(
+                    connection.execute(
+                        "SELECT COUNT(*) FROM generation_tasks WHERE save_id = ?",
+                        (normalized,),
+                    ).fetchone()[0]
+                )
+                failed_task_count = int(
+                    connection.execute(
+                        """
+                        SELECT COUNT(*) FROM generation_tasks
+                        WHERE save_id = ? AND status = 'failed'
+                        """,
+                        (normalized,),
+                    ).fetchone()[0]
+                )
         return {
             "database": str(self.path),
             "fts_enabled": self._fts_enabled,
@@ -1100,4 +1250,6 @@ class MemoryStore:
             "memory_count": memory_count,
             "archived_memory_count": archived_memory_count,
             "turn_count": turn_count,
+            "task_count": task_count,
+            "failed_task_count": failed_task_count,
         }

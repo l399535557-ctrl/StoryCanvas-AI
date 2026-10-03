@@ -178,6 +178,17 @@ Atomically creates a corrected replacement and marks the old memory as `supersed
 body is the same as memory creation. The replacement records the old ID in
 `supersedes_memory_id`, retaining a reviewable fact-revision chain.
 
+## `GET /v1/story/tasks`
+
+Lists persistent image-generation tasks. Optional query parameters are `save_id`, `status`,
+`limit`, and `offset`. Each task includes its request ID, lifecycle status, timestamps, output
+filename or safe error summary, and measured generation duration.
+
+## `GET /v1/story/tasks/{task_id}`
+
+Returns one generation task for diagnostics and later front-end polling. Tasks left queued or
+running during an unexpected restart are marked failed when the service starts again.
+
 ## `GET /images/{filename}`
 
 Serves generated WebP files. Only a basename ending in `.webp` is accepted.

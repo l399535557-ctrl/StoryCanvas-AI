@@ -200,6 +200,32 @@ def build_memory_router(
             ),
         }
 
+    @router.get("/tasks", dependencies=protected)
+    async def generation_tasks(
+        save_id: Annotated[str | None, Query()] = None,
+        task_status: Annotated[str | None, Query(alias="status")] = None,
+        limit: Annotated[int, Query(ge=1, le=500)] = 100,
+        offset: Annotated[int, Query(ge=0)] = 0,
+    ) -> dict[str, Any]:
+        try:
+            data = await asyncio.to_thread(
+                store.list_generation_tasks,
+                save_id=save_id,
+                status=task_status,
+                limit=limit,
+                offset=offset,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return {"limit": limit, "offset": offset, "data": data}
+
+    @router.get("/tasks/{task_id}", dependencies=protected)
+    async def generation_task(task_id: str) -> dict[str, Any]:
+        item = await asyncio.to_thread(store.get_generation_task, task_id)
+        if item is None:
+            raise HTTPException(status_code=404, detail="generation task not found")
+        return {"data": item}
+
     @router.get("/saves/{save_id}/memories", dependencies=protected)
     async def story_memories(
         save_id: str,

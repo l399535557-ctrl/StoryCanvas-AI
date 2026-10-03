@@ -3,6 +3,29 @@
 All notable public changes are recorded here. Local-only character data, credentials, generated
 media, model weights, and adult-oriented prompt rules are intentionally excluded.
 
+## 0.7.0 - 2026-10-03
+
+### Added
+
+- Persistent image-generation task records linked to story saves and request IDs.
+- Task lifecycle fields for queued, running, succeeded, failed, and cancelled states, including
+  output filename, safe error summary, timestamps, and measured generation duration.
+- Authenticated task-history and task-detail endpoints with save, status, and pagination filters.
+- Startup recovery that marks unfinished tasks as failed after a service restart instead of
+  leaving them permanently in a running state.
+- Task totals and failed-task counts in health and memory statistics.
+
+### Changed
+
+- Visual planning and ComfyUI generation now update one durable task record across success and
+  failure paths.
+- SQLite schema version increased to 4.
+
+### Verification
+
+- Added lifecycle, restart-recovery, filtering, statistics, and task API tests. The full suite now
+  contains 23 passing tests.
+
 ## 0.6.0 - 2026-10-03
 
 ### Added

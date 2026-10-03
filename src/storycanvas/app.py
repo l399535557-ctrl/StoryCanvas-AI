@@ -16,6 +16,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 
+from . import __version__
 from .comfy import ComfyError
 from .commands import ImageCommand, parse_command
 from .config import Settings
@@ -103,6 +104,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     memory_lock = asyncio.Lock()
     background_generation_tasks: set[asyncio.Task[Any]] = set()
 
+    def safe_memory_runtime() -> dict[str, Any]:
+        return {
+            "last_memory_retrieved": memory_runtime["last_memory_retrieved"],
+            "last_memory_ids": memory_runtime["last_memory_ids"],
+            "last_memory_extract_count": memory_runtime["last_memory_extract_count"],
+            "has_error": memory_runtime["last_memory_error"] is not None,
+        }
+
     def save_memory_state() -> None:
         state.set_active_save_id(str(memory_state["active_save_id"]))
 
@@ -121,7 +130,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     app = FastAPI(
         title="StoryCanvas AI",
-        version="0.12.0",
+        version="0.13.0",
         description="OpenAI-compatible text-adventure gateway with local ComfyUI illustrations.",
     )
 
@@ -385,7 +394,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     "top_k": cfg.memory_top_k,
                     "context_max_chars": cfg.memory_context_max_chars,
                     **memory_store.stats(),
-                    "runtime": memory_runtime,
+                    "runtime": safe_memory_runtime(),
                 },
                 "face_detailer": {
                     "enabled": cfg.face_detailer_enabled,
@@ -393,6 +402,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 },
             }
         )
+
+    @app.get("/v1/story/diagnostics", dependencies=[Depends(require_key)])
+    async def story_diagnostics() -> dict[str, Any]:
+        return {
+            "version": __version__,
+            "configuration": cfg.configuration_status(),
+            "image_backend": image_backend.name,
+            "active_save_id": memory_state["active_save_id"],
+            "database": await asyncio.to_thread(memory_store.diagnostics),
+            "memory_runtime": safe_memory_runtime(),
+        }
 
     @app.get("/images/{filename}")
     async def image(filename: str) -> FileResponse:

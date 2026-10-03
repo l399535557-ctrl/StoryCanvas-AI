@@ -24,6 +24,13 @@ Secrets are never returned.
 
 Returns one virtual orchestration model named `storycanvas`.
 
+## `GET /v1/story/diagnostics`
+
+Returns authenticated, privacy-safe backend diagnostics: application and SQLite schema versions,
+database integrity, journal and FTS5 state, aggregate data counts, generation-task status counts,
+and recent memory-runtime status. It never returns filesystem paths, credentials, story content,
+memory content, or internal visual prompts.
+
 ## `POST /v1/chat/completions`
 
 Example:

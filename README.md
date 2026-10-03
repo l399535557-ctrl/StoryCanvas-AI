@@ -37,6 +37,7 @@ instructions. StoryCanvas separates those responsibilities:
 - Recoverable save and memory management with rename/edit, archive/restore, and paginated history.
 - Portable save migration, verified database backups, and privacy-safe story publication ZIPs.
 - Persistent illustration tasks with request tracing, cancellation, retry, and restart recovery.
+- Authenticated privacy-safe diagnostics with database integrity and task-state reporting.
 - Structured visual direction for identity, action, camera, depth, lighting, and materials.
 - Single-frame action constraints and robust JSON extraction with deterministic fallback.
 - Tiled VAE decoding and batch size 1 for constrained GPUs.
@@ -147,7 +148,7 @@ Clients may also select a save with `story_save_id`, `conversation_id`, or the
 .\.venv\Scripts\python.exe -m ruff check .
 ```
 
-The 29-test suite validates command parsing, public content policy, structured prompt compilation,
+The 31-test suite validates command parsing, public content policy, structured prompt compilation,
 the image-backend contract, the Core workflow, optional face refinement, save isolation, memory
 extraction and RAG, migration, conflict handling, task recovery/cancellation/retry, backup/restore,
 request tracing, and publication export.
@@ -166,6 +167,8 @@ Review [SECURITY.md](SECURITY.md) before exposing the service to another device.
 ## Documentation
 
 - [Current progress and roadmap](docs/progress.md)
+- [User guide](docs/user-guide.md)
+- [Backend acceptance checklist](docs/backend-acceptance.md)
 - [Architecture](docs/architecture.md)
 - [Windows deployment](docs/deployment-windows.md)
 - [HTTP API](docs/api.md)

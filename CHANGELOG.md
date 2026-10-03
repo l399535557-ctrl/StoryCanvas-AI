@@ -3,6 +3,28 @@
 All notable public changes are recorded here. Local-only character data, credentials, generated
 media, model weights, and adult-oriented prompt rules are intentionally excluded.
 
+## 0.13.0 - 2026-10-03
+
+### Added
+
+- An authenticated `/v1/story/diagnostics` endpoint with SQLite integrity, schema, FTS5, aggregate
+  data, and generation-task status reporting.
+- Idempotent `storycanvas-seed-demo` sample-data initialization with linked turns and memories.
+- A Chinese user guide and a backend acceptance checklist for deployment and graduation review.
+
+### Scope freeze
+
+- Backend feature scope is now closed at the graduation-project acceptance level.
+- New model families, advanced retrieval research, distributed workers, and other expansion work
+  are explicitly deferred; the independent Web front end is the only remaining implementation.
+- Database paths were removed from the public health response.
+- Recent RAG query text and raw error details were removed from health and diagnostics responses.
+
+### Verification
+
+- Added diagnostics authentication/privacy and demo-data idempotency coverage. The full suite now
+  contains 31 passing tests.
+
 ## 0.12.0 - 2026-10-03
 
 ### Added

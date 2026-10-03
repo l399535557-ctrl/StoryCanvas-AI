@@ -58,6 +58,7 @@ ComfyUI 生成场景插图。Chatbox、SillyTavern、自研前端或其他兼容
 - 默认只监听本机地址；
 - 推荐通过Tailscale私网访问；
 - 请求ID和JSON结构化日志；
+- 认证后端诊断、数据库完整性和任务状态汇总；
 - 日志不记录密钥、请求正文、故事正文或记忆内容；
 - `.env`、数据库、图片、备份、模型和本地覆盖层均由Git忽略。
 
@@ -149,7 +150,7 @@ CHECKPOINT_NAME=your-sdxl-checkpoint.safetensors
 .\.venv\Scripts\python.exe -m ruff check .
 ```
 
-当前29项测试覆盖命令解析、内容策略、视觉提示编译、图像后端契约、ComfyUI工作流、
+当前31项测试覆盖命令解析、内容策略、视觉提示编译、图像后端契约、ComfyUI工作流、
 存档隔离、RAG、数据库迁移、记忆冲突、任务恢复与重试、备份恢复、请求追踪和作品导出。
 真实LLM与ComfyUI调用不进入公共CI，需要在目标设备上进行端到端验收。
 
@@ -175,6 +176,8 @@ CHECKPOINT_NAME=your-sdxl-checkpoint.safetensors
 
 ## 文档
 
+- [用户操作手册](docs/user-guide.md)
+- [后端验收清单](docs/backend-acceptance.md)
 - [当前进度与路线](docs/progress.md)
 - [系统架构](docs/architecture.md)
 - [Windows部署](docs/deployment-windows.md)

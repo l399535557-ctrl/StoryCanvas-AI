@@ -3,6 +3,7 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
+from storycanvas import __version__
 from storycanvas.app import create_app
 from storycanvas.config import Settings
 from storycanvas.memory_store import MemoryStore
@@ -58,6 +59,23 @@ def test_models_requires_gateway_key(tmp_path: Path) -> None:
         )
         assert response.status_code == 200
         assert response.json()["data"][0]["id"] == "storycanvas"
+
+
+def test_diagnostics_is_authenticated_and_privacy_safe(tmp_path: Path) -> None:
+    settings = settings_for_test(tmp_path)
+    with TestClient(create_app(settings)) as client:
+        assert client.get("/v1/story/diagnostics").status_code == 401
+        response = client.get(
+            "/v1/story/diagnostics",
+            headers={"Authorization": "Bearer gateway-test"},
+        )
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["version"] == __version__
+        assert payload["database"]["integrity"] == "ok"
+        assert payload["database"]["schema_version"] == 7
+        assert "story-memory.sqlite3" not in response.text
+        assert "last_memory_query" not in response.text
 
 
 def test_request_id_is_echoed_and_included_in_errors(tmp_path: Path) -> None:

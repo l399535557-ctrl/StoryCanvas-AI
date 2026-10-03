@@ -1492,7 +1492,7 @@ class MemoryStore:
                     ).fetchone()[0]
                 )
         return {
-            "database": str(self.path),
+            "database_ready": self.path.exists(),
             "fts_enabled": self._fts_enabled,
             "save_count": save_count,
             "archived_save_count": archived_save_count,
@@ -1501,4 +1501,37 @@ class MemoryStore:
             "turn_count": turn_count,
             "task_count": task_count,
             "failed_task_count": failed_task_count,
+        }
+
+    def diagnostics(self) -> dict[str, Any]:
+        """Return privacy-safe database health and aggregate task state."""
+        with self._connect() as connection:
+            integrity_row = connection.execute("PRAGMA quick_check").fetchone()
+            schema_version = int(connection.execute("PRAGMA user_version").fetchone()[0])
+            journal_mode = str(connection.execute("PRAGMA journal_mode").fetchone()[0])
+            task_rows = connection.execute(
+                "SELECT status, COUNT(*) AS count FROM generation_tasks GROUP BY status"
+            ).fetchall()
+            latest_activity = connection.execute(
+                "SELECT MAX(updated_at) FROM story_saves"
+            ).fetchone()[0]
+        task_status_counts = {
+            status: 0 for status in ("queued", "running", "succeeded", "failed", "cancelled")
+        }
+        task_status_counts.update(
+            {str(row["status"]): int(row["count"]) for row in task_rows}
+        )
+        try:
+            database_size_bytes = self.path.stat().st_size
+        except OSError:
+            database_size_bytes = 0
+        return {
+            "integrity": str(integrity_row[0]) if integrity_row else "unknown",
+            "schema_version": schema_version,
+            "journal_mode": journal_mode,
+            "database_size_bytes": database_size_bytes,
+            "fts_enabled": self._fts_enabled,
+            "latest_activity": int(latest_activity) if latest_activity is not None else None,
+            "task_status_counts": task_status_counts,
+            "counts": self.stats(),
         }

@@ -62,6 +62,14 @@ Every snapshot passes `integrity_check`. Restore accepts only safe filenames and
 versions, serializes maintenance against in-process database work, and creates a pre-restore safety
 snapshot before changing the live database.
 
+### Diagnostics and acceptance
+
+The authenticated diagnostics endpoint reports version, SQLite integrity, schema and journal mode,
+FTS5 availability, aggregate data counts, and task-state counts without exposing filesystem paths,
+story content, memory content, retrieval queries, credentials, or internal visual prompts. A small
+idempotent demo-data command and a written acceptance checklist provide repeatable deployment and
+graduation-review evidence.
+
 ### Story publication export
 
 A separate publication exporter converts chronological turns into Markdown, places linked images

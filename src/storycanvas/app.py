@@ -121,7 +121,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     app = FastAPI(
         title="StoryCanvas AI",
-        version="0.11.0",
+        version="0.12.0",
         description="OpenAI-compatible text-adventure gateway with local ComfyUI illustrations.",
     )
 
@@ -245,6 +245,43 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise ComfyError("generation task was cancelled before completion")
         return filename, elapsed
 
+    async def capture_successful_turn(
+        save_id: str,
+        user_text: str,
+        assistant_text: str,
+        generation_task_id: str | None,
+    ) -> None:
+        try:
+            turn_id = await asyncio.to_thread(
+                memory_store.record_turn,
+                save_id,
+                user_text,
+                assistant_text,
+            )
+            if generation_task_id is not None:
+                linked = await asyncio.to_thread(
+                    memory_store.link_generation_task_to_turn,
+                    generation_task_id,
+                    save_id,
+                    turn_id,
+                )
+                if not linked:
+                    logger.warning(
+                        "generation_task_turn_link_failed",
+                        extra={"generation_task_id": generation_task_id, "turn_id": turn_id},
+                    )
+            memory_service.schedule_capture(
+                save_id,
+                user_text,
+                assistant_text,
+                turn_id=turn_id,
+            )
+        except Exception as exc:
+            memory_runtime["last_memory_error"] = (
+                f"history: {type(exc).__name__}: {exc}"[:1000]
+            )
+            logger.exception("story_turn_capture_failed")
+
     app.include_router(
         build_memory_router(
             store=memory_store,
@@ -292,6 +329,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             request_id_context.get(),
             retry_of_task_id=task_id,
             backend=original["backend"],
+            turn_id=original["turn_id"],
         )
         await asyncio.to_thread(
             memory_store.set_generation_task_prompts,
@@ -468,23 +506,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     temperature=request.temperature,
                     max_tokens=request.max_tokens,
                 )
-                memory_service.schedule_capture(save_id, parsed.text or latest, answer)
+                generation_task_id: str | None = None
                 generate = parsed.command is ImageCommand.FORCE or (
                     state.auto_image and is_visually_relevant(f"{parsed.text}\n{answer}")
                 )
                 if generate:
                     combined_policy = check_public_image_policy(f"{parsed.text}\n{answer}")
                     if combined_policy.allowed:
-                        task_id = await asyncio.to_thread(
+                        generation_task_id = await asyncio.to_thread(
                             memory_store.create_generation_task,
                             save_id,
                             request_id_context.get(),
                             backend=image_backend.name,
-                        )
-                        await asyncio.to_thread(
-                            memory_store.update_generation_task,
-                            task_id,
-                            "running",
                         )
                         try:
                             positive, negative = await build_visual_prompt(
@@ -492,19 +525,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                             )
                             await asyncio.to_thread(
                                 memory_store.set_generation_task_prompts,
-                                task_id,
+                                generation_task_id,
                                 positive,
                                 negative,
                             )
                             filename, elapsed = await run_generation_task(
-                                task_id,
+                                generation_task_id,
                                 positive,
                                 negative,
                             )
                         except UpstreamError as task_error:
                             await asyncio.to_thread(
                                 memory_store.update_generation_task,
-                                task_id,
+                                generation_task_id,
                                 "failed",
                                 error=f"{type(task_error).__name__}: {task_error}",
                             )
@@ -512,6 +545,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                         image_url = f"{cfg.public_base_url}/images/{filename}"
                         answer = f"{answer.rstrip()}\n\n![Generated scene]({image_url})"
                         answer += f"\n\n_Image generated locally in {elapsed:.1f}s._"
+                await capture_successful_turn(
+                    save_id,
+                    parsed.text or latest,
+                    answer,
+                    generation_task_id,
+                )
                 result = _result(answer, upstream_payload.get("usage"))
             except (UpstreamError, ComfyError) as exc:
                 raise HTTPException(status_code=502, detail=str(exc)) from exc

@@ -3,6 +3,26 @@
 All notable public changes are recorded here. Local-only character data, credentials, generated
 media, model weights, and adult-oriented prompt rules are intentionally excluded.
 
+## 0.12.0 - 2026-10-03
+
+### Added
+
+- Durable links from image-generation tasks to their completed story turn.
+- Public image-task metadata on paginated turn history for direct front-end rendering.
+- Turn-linked illustration placement in publication ZIP exports.
+
+### Fixed
+
+- Story history is now retained even when long-term memory retrieval and extraction are disabled.
+- Visual prompts are stored while a task is queued, before the running transition, so failed jobs
+  remain retryable.
+
+### Migration and verification
+
+- SQLite schema version increased to 7 with an indexed nullable `turn_id` task relation.
+- Added disabled-RAG history retention and task-to-turn relation coverage. The full suite now
+  contains 29 passing tests.
+
 ## 0.11.0 - 2026-10-03
 
 ### Added

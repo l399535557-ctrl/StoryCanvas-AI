@@ -40,10 +40,10 @@ This separation prevents raw conversation history from becoming an unstructured 
 
 ### Persistent generation tasks
 
-Every accepted illustration job receives a durable task ID linked to its story save and HTTP
-request ID. The database records queued, running, succeeded, failed, or cancelled state together
-with timestamps, duration, output filename, and a bounded error summary. On restart, unfinished
-tasks are marked interrupted so task history never remains falsely active.
+Every accepted illustration job receives a durable task ID linked to its story save, completed
+story turn, and HTTP request ID. The database records queued, running, succeeded, failed, or
+cancelled state together with timestamps, duration, output filename, and a bounded error summary.
+On restart, unfinished tasks are marked interrupted so task history never remains falsely active.
 
 Failed or cancelled tasks may be retried from locally retained visual prompts. Retry lineage and
 the ComfyUI prompt ID are stored for diagnosis. Task APIs intentionally omit positive and negative
@@ -64,9 +64,10 @@ snapshot before changing the live database.
 
 ### Story publication export
 
-A separate publication exporter converts chronological turns into Markdown and packages successful
-local WebP illustrations into one ZIP. Its manifest contains only delivery metadata and deliberately
-excludes RAG memories, internal prompts, credentials, and archived records.
+A separate publication exporter converts chronological turns into Markdown, places linked images
+beside their story turn, and packages successful local WebP illustrations into one ZIP. Its
+manifest contains only delivery metadata and deliberately excludes RAG memories, internal prompts,
+credentials, and archived records.
 
 ### ComfyUI
 
@@ -92,13 +93,12 @@ Impact Pack; it is disabled unless the operator installs the extension and enabl
 5. Apply the public image policy before forced generation.
 6. Add the story-system prompt and optional story profile.
 7. Request the next narrative turn from the text provider.
-8. Extract durable facts locally and persist them asynchronously.
-9. Decide whether the turn is visually relevant.
-10. Ask the provider for a structured, single-frame visual plan. The compiler deduplicates tags and
+8. Decide whether the turn is visually relevant.
+9. Ask the provider for a structured, single-frame visual plan. The compiler deduplicates tags and
    emits stable `BREAK` sections for subject identity, action, camera, depth, lighting, and quality.
-11. Queue a serialized ComfyUI job and poll its history.
-12. Convert the returned image to WebP.
-13. Append Markdown to the same assistant response.
+10. Queue a serialized ComfyUI job and poll its history.
+11. Convert the returned image to WebP and append Markdown to the assistant response.
+12. Persist the completed story turn, link its generation task, and extract durable facts locally.
 
 ## Reliability decisions
 

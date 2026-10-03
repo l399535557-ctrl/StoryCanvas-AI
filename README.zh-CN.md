@@ -149,7 +149,7 @@ CHECKPOINT_NAME=your-sdxl-checkpoint.safetensors
 .\.venv\Scripts\python.exe -m ruff check .
 ```
 
-当前28项测试覆盖命令解析、内容策略、视觉提示编译、图像后端契约、ComfyUI工作流、
+当前29项测试覆盖命令解析、内容策略、视觉提示编译、图像后端契约、ComfyUI工作流、
 存档隔离、RAG、数据库迁移、记忆冲突、任务恢复与重试、备份恢复、请求追踪和作品导出。
 真实LLM与ComfyUI调用不进入公共CI，需要在目标设备上进行端到端验收。
 

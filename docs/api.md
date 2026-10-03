@@ -135,6 +135,9 @@ remain excluded.
 ## `GET /v1/story/saves/{save_id}/turns`
 
 Returns newest-first story turns. Use `limit` (1-200) and `offset` for pagination.
+Each turn contains an `image_tasks` list with its related public task metadata, allowing a client to
+render the matching illustration and retry state without guessing from timestamps. Internal visual
+prompts are never included.
 
 ## `GET /v1/story/saves/{save_id}/memories`
 

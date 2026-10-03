@@ -53,12 +53,16 @@ def test_memory_store_migrates_version_one_database(tmp_path: Path) -> None:
         memory_columns = {
             row[1] for row in connection.execute("PRAGMA table_info(memories)")
         }
+        task_columns = {
+            row[1] for row in connection.execute("PRAGMA table_info(generation_tasks)")
+        }
         user_version = connection.execute("PRAGMA user_version").fetchone()[0]
     assert "archived_at" in save_columns
     assert "archived_at" in memory_columns
     assert "status" in memory_columns
     assert "supersedes_memory_id" in memory_columns
-    assert user_version == 6
+    assert "turn_id" in task_columns
+    assert user_version == 7
 
 
 def test_memory_store_isolates_saves_and_retrieves_chinese(tmp_path: Path) -> None:
@@ -120,7 +124,28 @@ def test_local_rag_capture_and_context_injection(tmp_path: Path) -> None:
     )
     assert message is not None
     assert "月纹钥匙" in message["content"]
+
+
+def test_story_history_is_kept_when_rag_is_disabled(tmp_path: Path) -> None:
+    store = MemoryStore(tmp_path / "memory.sqlite3")
+    service = MemoryRAGService(
+        store=store,
+        state={"active_save_id": "demo"},
+        runtime={},
+        state_lock=asyncio.Lock(),
+        save_state=lambda: None,
+        character_memory={"characters": {}},
+        enabled=False,
+        extract_enabled=False,
+        default_save_id="default",
+        top_k=8,
+        context_max_chars=6000,
+    )
+
+    asyncio.run(service.extract_and_store("demo", "用户输入", "故事回复内容足够长。"))
+
     assert store.stats("demo")["turn_count"] == 1
+    assert store.stats("demo")["memory_count"] == 0
 
 
 def test_data_management_is_recoverable_and_save_scoped(tmp_path: Path) -> None:
@@ -290,6 +315,13 @@ def test_generation_task_lifecycle_and_restart_recovery(tmp_path: Path) -> None:
     succeeded = reopened.list_generation_tasks(save_id="demo", status="succeeded")
     assert [item["id"] for item in succeeded] == [success_id]
     assert succeeded[0]["image_filename"] == "scene.webp"
+    turn_id = reopened.record_turn("demo", "进入钟楼。", "发现了月纹钥匙。")
+    assert reopened.link_generation_task_to_turn(success_id, "demo", turn_id)
+    linked_task = reopened.get_generation_task(success_id)
+    assert linked_task["turn_id"] == turn_id
+    turns = reopened.list_turns("demo")
+    assert turns[0]["image_tasks"][0]["id"] == success_id
+    assert "positive_prompt" not in turns[0]["image_tasks"][0]
     assert reopened.stats("demo")["task_count"] == 2
 
     cancellable_id = reopened.create_generation_task("demo", "request-003")
@@ -322,7 +354,7 @@ def test_database_backup_restore_and_safety_snapshot(tmp_path: Path) -> None:
     )
     assert original_id is not None
     backup = store.create_database_backup(backups, label="manual")
-    assert backup["schema_version"] == 6
+    assert backup["schema_version"] == 7
     later_id = store.add_memory(
         "demo",
         memory_type="fact",

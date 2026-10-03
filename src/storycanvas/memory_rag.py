@@ -302,17 +302,18 @@ class MemoryRAGService:
         save_id: str,
         user_text: str,
         assistant_text: str,
+        *,
+        turn_id: int | None = None,
     ) -> None:
-        if not self.enabled:
-            return
         try:
-            turn_id = await asyncio.to_thread(
-                self.store.record_turn,
-                save_id,
-                user_text,
-                assistant_text,
-            )
-            if not self.extract_enabled:
+            if turn_id is None:
+                turn_id = await asyncio.to_thread(
+                    self.store.record_turn,
+                    save_id,
+                    user_text,
+                    assistant_text,
+                )
+            if not self.enabled or not self.extract_enabled:
                 return
             payload = self.local_memory_payload(user_text, assistant_text)
             if payload is None:
@@ -331,7 +332,21 @@ class MemoryRAGService:
                 f"extract: {type(exc).__name__}: {exc}"[:1000]
             )
 
-    def schedule_capture(self, save_id: str, user_text: str, assistant_text: str) -> None:
-        task = asyncio.create_task(self.extract_and_store(save_id, user_text, assistant_text))
+    def schedule_capture(
+        self,
+        save_id: str,
+        user_text: str,
+        assistant_text: str,
+        *,
+        turn_id: int | None = None,
+    ) -> None:
+        task = asyncio.create_task(
+            self.extract_and_store(
+                save_id,
+                user_text,
+                assistant_text,
+                turn_id=turn_id,
+            )
+        )
         self.background_tasks.add(task)
         task.add_done_callback(self.background_tasks.discard)

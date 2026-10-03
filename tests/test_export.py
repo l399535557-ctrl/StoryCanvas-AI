@@ -13,7 +13,7 @@ from storycanvas.story_export import build_story_archive
 
 def prepare_story(store: MemoryStore, images: Path) -> str:
     store.ensure_save("demo", "钟楼故事")
-    store.record_turn(
+    turn_id = store.record_turn(
         "demo",
         "林岚推开钟楼的门。",
         "她在月光下发现一把银钥匙。\n\n![Generated](http://localhost/image.webp)",
@@ -28,6 +28,7 @@ def prepare_story(store: MemoryStore, images: Path) -> str:
         image_filename="scene.webp",
         duration_seconds=1.5,
     )
+    assert store.link_generation_task_to_turn(task_id, "demo", turn_id)
     return task_id
 
 
@@ -50,6 +51,7 @@ def test_story_archive_contains_markdown_manifest_and_images(tmp_path: Path) -> 
     assert "http://localhost/image.webp" not in story
     assert "images/scene.webp" in story
     assert manifest["images"][0]["task_id"] == task_id
+    assert manifest["images"][0]["turn_id"] is not None
     assert "memories" not in manifest
 
 

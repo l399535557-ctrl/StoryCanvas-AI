@@ -31,6 +31,29 @@ def build_story_archive(
     tasks = store.list_generation_tasks(save_id=normalized, status="succeeded", limit=500)
     exported_at = int(time.time())
 
+    image_items: list[dict[str, Any]] = []
+    for task in reversed(tasks):
+        raw_name = str(task.get("image_filename") or "")
+        safe_name = Path(raw_name).name
+        path = generated_images_dir / safe_name
+        if raw_name != safe_name or path.suffix.lower() != ".webp" or not path.is_file():
+            continue
+        image_items.append(
+            {
+                "task_id": task["id"],
+                "request_id": task["request_id"],
+                "filename": safe_name,
+                "created_at": task["created_at"],
+                "duration_seconds": task["duration_seconds"],
+                "turn_id": task["turn_id"],
+            }
+        )
+
+    images_by_turn: dict[int, list[dict[str, Any]]] = {}
+    for item in image_items:
+        if item["turn_id"] is not None:
+            images_by_turn.setdefault(int(item["turn_id"]), []).append(item)
+
     lines = [f"# {save['name']}", "", f"> StoryCanvas AI 导出时间：{exported_at}", ""]
     for index, turn in enumerate(turns, start=1):
         lines.extend(
@@ -47,27 +70,20 @@ def build_story_archive(
                 "",
             ]
         )
+        for image_index, item in enumerate(images_by_turn.get(int(turn["id"]), []), start=1):
+            lines.extend(
+                [
+                    f"### 本节插图 {image_index}",
+                    "",
+                    f"![第 {index} 节插图 {image_index}](images/{item['filename']})",
+                    "",
+                ]
+            )
 
-    image_items: list[dict[str, Any]] = []
-    for task in reversed(tasks):
-        raw_name = str(task.get("image_filename") or "")
-        safe_name = Path(raw_name).name
-        path = generated_images_dir / safe_name
-        if raw_name != safe_name or path.suffix.lower() != ".webp" or not path.is_file():
-            continue
-        image_items.append(
-            {
-                "task_id": task["id"],
-                "request_id": task["request_id"],
-                "filename": safe_name,
-                "created_at": task["created_at"],
-                "duration_seconds": task["duration_seconds"],
-            }
-        )
-
-    if image_items:
-        lines.extend(["## 插图", ""])
-        for index, item in enumerate(image_items, start=1):
+    unlinked_images = [item for item in image_items if item["turn_id"] is None]
+    if unlinked_images:
+        lines.extend(["## 未关联插图", ""])
+        for index, item in enumerate(unlinked_images, start=1):
             lines.extend(
                 [
                     f"### 插图 {index}",

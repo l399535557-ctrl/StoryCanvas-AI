@@ -147,7 +147,7 @@ Clients may also select a save with `story_save_id`, `conversation_id`, or the
 .\.venv\Scripts\python.exe -m ruff check .
 ```
 
-The 28-test suite validates command parsing, public content policy, structured prompt compilation,
+The 29-test suite validates command parsing, public content policy, structured prompt compilation,
 the image-backend contract, the Core workflow, optional face refinement, save isolation, memory
 extraction and RAG, migration, conflict handling, task recovery/cancellation/retry, backup/restore,
 request tracing, and publication export.

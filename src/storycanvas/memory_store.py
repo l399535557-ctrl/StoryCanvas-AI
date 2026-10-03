@@ -160,7 +160,8 @@ class MemoryStore:
                     positive_prompt TEXT,
                     negative_prompt TEXT,
                     retry_of_task_id TEXT,
-                    backend TEXT NOT NULL DEFAULT 'comfy-sdxl'
+                    backend TEXT NOT NULL DEFAULT 'comfy-sdxl',
+                    turn_id INTEGER REFERENCES story_turns(id) ON DELETE SET NULL
                 );
 
                 CREATE INDEX IF NOT EXISTS idx_generation_tasks_save_created
@@ -199,12 +200,17 @@ class MemoryStore:
                 "negative_prompt": "TEXT",
                 "retry_of_task_id": "TEXT",
                 "backend": "TEXT NOT NULL DEFAULT 'comfy-sdxl'",
+                "turn_id": "INTEGER REFERENCES story_turns(id) ON DELETE SET NULL",
             }.items():
                 if column not in task_columns:
                     connection.execute(
                         f"ALTER TABLE generation_tasks ADD COLUMN {column} {definition}"
                     )
-            connection.execute("PRAGMA user_version = 6")
+            connection.execute(
+                "CREATE INDEX IF NOT EXISTS idx_generation_tasks_turn "
+                "ON generation_tasks(turn_id, created_at DESC)"
+            )
+            connection.execute("PRAGMA user_version = 7")
             connection.execute(
                 """
                 UPDATE generation_tasks
@@ -422,7 +428,29 @@ class MemoryStore:
                 """,
                 (normalized, clean_limit, clean_offset),
             ).fetchall()
-        return [dict(row) for row in rows]
+            turn_ids = [int(row["id"]) for row in rows]
+            tasks_by_turn: dict[int, list[dict[str, Any]]] = {
+                turn_id: [] for turn_id in turn_ids
+            }
+            if turn_ids:
+                placeholders = ",".join("?" for _ in turn_ids)
+                task_rows = connection.execute(
+                    f"""
+                    SELECT id, turn_id, request_id, status, image_filename, error,
+                           created_at, started_at, finished_at, duration_seconds,
+                           prompt_id, retry_of_task_id, backend
+                    FROM generation_tasks
+                    WHERE turn_id IN ({placeholders})
+                    ORDER BY created_at, id
+                    """,
+                    turn_ids,
+                ).fetchall()
+                for task in task_rows:
+                    tasks_by_turn[int(task["turn_id"])].append(dict(task))
+        return [
+            {**dict(row), "image_tasks": tasks_by_turn[int(row["id"])]}
+            for row in rows
+        ]
 
     def add_memory(
         self,
@@ -1081,6 +1109,7 @@ class MemoryStore:
         *,
         retry_of_task_id: object = None,
         backend: object = "comfy-sdxl",
+        turn_id: int | None = None,
     ) -> str:
         normalized = self.ensure_save(save_id)
         task_id = uuid.uuid4().hex
@@ -1089,8 +1118,9 @@ class MemoryStore:
             connection.execute(
                 """
                 INSERT INTO generation_tasks(
-                    id, save_id, request_id, status, created_at, retry_of_task_id, backend
-                ) VALUES (?, ?, ?, 'queued', ?, ?, ?)
+                    id, save_id, request_id, status, created_at, retry_of_task_id,
+                    backend, turn_id
+                ) VALUES (?, ?, ?, 'queued', ?, ?, ?, ?)
                 """,
                 (
                     task_id,
@@ -1099,9 +1129,36 @@ class MemoryStore:
                     now,
                     _clean_text(retry_of_task_id, 64) or None,
                     _clean_text(backend, 64) or "comfy-sdxl",
+                    turn_id,
                 ),
             )
         return task_id
+
+    def link_generation_task_to_turn(
+        self,
+        task_id: object,
+        save_id: object,
+        turn_id: int,
+    ) -> bool:
+        normalized = normalize_save_id(save_id)
+        with self._connect() as connection:
+            cursor = connection.execute(
+                """
+                UPDATE generation_tasks SET turn_id = ?
+                WHERE id = ? AND save_id = ? AND EXISTS (
+                    SELECT 1 FROM story_turns
+                    WHERE id = ? AND save_id = ?
+                )
+                """,
+                (
+                    int(turn_id),
+                    _clean_text(task_id, 64),
+                    normalized,
+                    int(turn_id),
+                    normalized,
+                ),
+            )
+        return cursor.rowcount > 0
 
     def set_generation_task_prompts(
         self,
@@ -1194,7 +1251,7 @@ class MemoryStore:
                 """
                 SELECT id, save_id, request_id, status, image_filename, error,
                        created_at, started_at, finished_at, duration_seconds,
-                       prompt_id, retry_of_task_id, backend
+                       prompt_id, retry_of_task_id, backend, turn_id
                 FROM generation_tasks WHERE id = ?
                 """,
                 (_clean_text(task_id, 64),),
@@ -1206,7 +1263,7 @@ class MemoryStore:
             row = connection.execute(
                 """
                 SELECT id, save_id, request_id, status, positive_prompt,
-                       negative_prompt, retry_of_task_id, backend
+                       negative_prompt, retry_of_task_id, backend, turn_id
                 FROM generation_tasks WHERE id = ?
                 """,
                 (_clean_text(task_id, 64),),
@@ -1230,7 +1287,7 @@ class MemoryStore:
                 """
                 SELECT id, save_id, request_id, status, image_filename, error,
                        created_at, started_at, finished_at, duration_seconds,
-                       prompt_id, retry_of_task_id, backend
+                       prompt_id, retry_of_task_id, backend, turn_id
                 FROM generation_tasks
                 WHERE (? IS NULL OR save_id = ?) AND (? IS NULL OR status = ?)
                 ORDER BY created_at DESC, id DESC
@@ -1319,7 +1376,7 @@ class MemoryStore:
             if result is None or result[0] != "ok":
                 raise ValueError("database backup failed integrity check")
             schema_version = int(validation.execute("PRAGMA user_version").fetchone()[0])
-            if schema_version > 6:
+            if schema_version > 7:
                 raise ValueError("database backup uses a newer unsupported schema")
 
         safety_backup = self.create_database_backup(

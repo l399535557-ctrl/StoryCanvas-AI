@@ -115,7 +115,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     app = FastAPI(
         title="StoryCanvas AI",
-        version="0.2.0",
+        version="0.3.0",
         description="OpenAI-compatible text-adventure gateway with local ComfyUI illustrations.",
     )
 

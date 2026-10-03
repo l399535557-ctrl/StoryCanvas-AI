@@ -103,6 +103,21 @@ def test_control_command_stream_uses_bounded_sse_chunks(tmp_path: Path) -> None:
 def test_memory_management_api(tmp_path: Path) -> None:
     with TestClient(create_app(settings_for_test(tmp_path))) as client:
         headers = {"Authorization": "Bearer gateway-test"}
+        assert client.delete("/v1/story/saves/default", headers=headers).status_code == 409
+        save = client.post(
+            "/v1/story/saves",
+            headers=headers,
+            json={"id": "demo", "name": "演示故事"},
+        )
+        assert save.status_code == 201
+        renamed = client.patch(
+            "/v1/story/saves/demo",
+            headers=headers,
+            json={"name": "雾港故事"},
+        )
+        assert renamed.status_code == 200
+        assert renamed.json()["data"]["name"] == "雾港故事"
+
         created = client.post(
             "/v1/story/saves/demo/memories",
             headers=headers,
@@ -114,10 +129,59 @@ def test_memory_management_api(tmp_path: Path) -> None:
                 "importance": 5,
             },
         )
-        assert created.status_code == 200
+        assert created.status_code == 201
+        memory_id = created.json()["data"]["id"]
+        updated = client.patch(
+            f"/v1/story/saves/demo/memories/{memory_id}",
+            headers=headers,
+            json={"importance": 4, "tags": ["北门", "月相"]},
+        )
+        assert updated.status_code == 200
+        assert updated.json()["data"]["importance"] == 4
+
         listed = client.get(
-            "/v1/story/saves/demo/memories",
+            "/v1/story/saves/demo/memories?limit=10&offset=0",
             headers=headers,
         )
         assert listed.status_code == 200
         assert listed.json()["data"][0]["content"].startswith("雾港城")
+
+        archived = client.delete(
+            f"/v1/story/saves/demo/memories/{memory_id}", headers=headers
+        )
+        assert archived.status_code == 200
+        assert client.get(
+            "/v1/story/saves/demo/memories", headers=headers
+        ).json()["data"] == []
+        duplicate_archived = client.post(
+            "/v1/story/saves/demo/memories",
+            headers=headers,
+            json={
+                "type": "world",
+                "content": "雾港城的北门只在满月时开启。",
+                "tags": ["北门"],
+                "importance": 4,
+            },
+        )
+        assert duplicate_archived.status_code == 409
+        restored = client.post(
+            f"/v1/story/saves/demo/memories/{memory_id}/restore", headers=headers
+        )
+        assert restored.status_code == 200
+
+        extra = client.post(
+            "/v1/story/saves",
+            headers=headers,
+            json={"id": "archive-me", "name": "待归档"},
+        )
+        assert extra.status_code == 201
+        assert client.delete("/v1/story/saves/archive-me", headers=headers).status_code == 200
+        visible = client.get("/v1/story/saves", headers=headers).json()["data"]
+        assert all(item["id"] != "archive-me" for item in visible)
+        all_saves = client.get(
+            "/v1/story/saves?include_archived=true", headers=headers
+        ).json()["data"]
+        assert any(item["id"] == "archive-me" for item in all_saves)
+        assert client.post(
+            "/v1/story/saves/archive-me/restore", headers=headers
+        ).status_code == 200

@@ -116,7 +116,14 @@ class MemoryRAGService:
             or self.state.get("active_save_id")
             or self.default_save_id
         )
-        return normalize_save_id(requested, self.default_save_id)
+        normalized = normalize_save_id(requested, self.default_save_id)
+        existing = self.store.get_save(normalized)
+        if existing and existing["archived_at"] is not None:
+            self.runtime["last_memory_error"] = (
+                f"save [{normalized}] is archived; using [{self.default_save_id}]"
+            )
+            return self.default_save_id
+        return normalized
 
     async def handle_command(self, user_text: str) -> str | None:
         match = _COMMAND_PATTERN.match(user_text)
@@ -142,6 +149,9 @@ class MemoryRAGService:
                 active = str(self.state.get("active_save_id") or self.default_save_id)
                 return f"当前故事存档：{active}。使用“/存档 名称”创建或切换存档。"
             save_id = normalize_save_id(argument, self.default_save_id)
+            existing = await asyncio.to_thread(self.store.get_save, save_id)
+            if existing and existing["archived_at"] is not None:
+                await asyncio.to_thread(self.store.restore_save, save_id)
             await asyncio.to_thread(self.store.ensure_save, save_id, argument)
             async with self.state_lock:
                 self.state["active_save_id"] = save_id

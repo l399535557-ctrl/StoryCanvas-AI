@@ -4,9 +4,41 @@ import asyncio
 from collections.abc import Callable
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Body, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from pydantic import BaseModel, ConfigDict, Field
 
 from .memory_store import MemoryStore, normalize_save_id
+
+
+class SaveCreate(BaseModel):
+    id: str | None = Field(default=None, max_length=120)
+    name: str = Field(min_length=1, max_length=120)
+
+
+class SaveUpdate(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+
+
+class MemoryCreate(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    memory_type: str = Field(default="note", alias="type", max_length=32)
+    content: str = Field(min_length=1, max_length=1000)
+    tags: list[str] = Field(default_factory=list, max_length=12)
+    entities: list[str] = Field(default_factory=list, max_length=10)
+    importance: int = Field(default=3, ge=1, le=5)
+    story_time: str | None = Field(default=None, max_length=120)
+
+
+class MemoryUpdate(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    memory_type: str | None = Field(default=None, alias="type", max_length=32)
+    content: str | None = Field(default=None, min_length=1, max_length=1000)
+    tags: list[str] | None = Field(default=None, max_length=12)
+    entities: list[str] | None = Field(default=None, max_length=10)
+    importance: int | None = Field(default=None, ge=1, le=5)
+    story_time: str | None = Field(default=None, max_length=120)
 
 
 def build_memory_router(
@@ -16,46 +48,196 @@ def build_memory_router(
     require_gateway_key: Callable[..., Any],
     default_save_id: str,
 ) -> APIRouter:
-    router = APIRouter(prefix="/v1/story", tags=["story-memory"])
+    router = APIRouter(prefix="/v1/story", tags=["story-data"])
     protected = [Depends(require_gateway_key)]
 
+    def normalized_save(save_id: str) -> str:
+        return normalize_save_id(save_id, default_save_id)
+
+    async def require_save(save_id: str) -> tuple[str, dict[str, Any]]:
+        normalized = normalized_save(save_id)
+        item = await asyncio.to_thread(store.get_save, normalized)
+        if item is None:
+            raise HTTPException(status_code=404, detail="story save not found")
+        return normalized, item
+
     @router.get("/saves", dependencies=protected)
-    async def story_saves() -> dict[str, Any]:
+    async def story_saves(
+        include_archived: Annotated[bool, Query()] = False,
+    ) -> dict[str, Any]:
         return {
             "active_save_id": state.get("active_save_id"),
-            "data": await asyncio.to_thread(store.list_saves),
+            "data": await asyncio.to_thread(
+                store.list_saves,
+                include_archived=include_archived,
+            ),
+        }
+
+    @router.post(
+        "/saves",
+        dependencies=protected,
+        status_code=status.HTTP_201_CREATED,
+    )
+    async def create_story_save(body: SaveCreate) -> dict[str, Any]:
+        normalized = normalize_save_id(body.id or body.name, default_save_id)
+        if await asyncio.to_thread(store.get_save, normalized) is not None:
+            raise HTTPException(status_code=409, detail="story save already exists")
+        await asyncio.to_thread(store.ensure_save, normalized, body.name)
+        return {"data": await asyncio.to_thread(store.get_save, normalized)}
+
+    @router.patch("/saves/{save_id}", dependencies=protected)
+    async def update_story_save(save_id: str, body: SaveUpdate) -> dict[str, Any]:
+        normalized, item = await require_save(save_id)
+        if item["archived_at"] is not None:
+            raise HTTPException(status_code=409, detail="restore the story save before editing")
+        updated = await asyncio.to_thread(store.rename_save, normalized, body.name)
+        if not updated:
+            raise HTTPException(status_code=404, detail="story save not found")
+        return {"data": await asyncio.to_thread(store.get_save, normalized)}
+
+    @router.delete("/saves/{save_id}", dependencies=protected)
+    async def archive_story_save(save_id: str) -> dict[str, Any]:
+        normalized, item = await require_save(save_id)
+        if normalized == normalize_save_id(default_save_id):
+            raise HTTPException(status_code=409, detail="the default save cannot be archived")
+        if normalized == normalize_save_id(state.get("active_save_id"), default_save_id):
+            raise HTTPException(
+                status_code=409,
+                detail="switch to another save before archiving the active save",
+            )
+        if item["archived_at"] is not None:
+            raise HTTPException(status_code=409, detail="story save is already archived")
+        await asyncio.to_thread(store.archive_save, normalized)
+        return {"save_id": normalized, "archived": True}
+
+    @router.post("/saves/{save_id}/restore", dependencies=protected)
+    async def restore_story_save(save_id: str) -> dict[str, Any]:
+        normalized, item = await require_save(save_id)
+        if item["archived_at"] is None:
+            raise HTTPException(status_code=409, detail="story save is not archived")
+        await asyncio.to_thread(store.restore_save, normalized)
+        return {"save_id": normalized, "archived": False}
+
+    @router.get("/saves/{save_id}/turns", dependencies=protected)
+    async def story_turns(
+        save_id: str,
+        limit: Annotated[int, Query(ge=1, le=200)] = 50,
+        offset: Annotated[int, Query(ge=0)] = 0,
+    ) -> dict[str, Any]:
+        normalized, _ = await require_save(save_id)
+        return {
+            "save_id": normalized,
+            "limit": limit,
+            "offset": offset,
+            "data": await asyncio.to_thread(
+                store.list_turns,
+                normalized,
+                limit=limit,
+                offset=offset,
+            ),
         }
 
     @router.get("/saves/{save_id}/memories", dependencies=protected)
-    async def story_memories(save_id: str, limit: int = 100) -> dict[str, Any]:
-        normalized = normalize_save_id(save_id, default_save_id)
+    async def story_memories(
+        save_id: str,
+        limit: Annotated[int, Query(ge=1, le=500)] = 100,
+        offset: Annotated[int, Query(ge=0)] = 0,
+        include_archived: Annotated[bool, Query()] = False,
+    ) -> dict[str, Any]:
+        normalized, _ = await require_save(save_id)
         return {
             "save_id": normalized,
+            "limit": limit,
+            "offset": offset,
             "data": await asyncio.to_thread(
                 store.list_memories,
                 normalized,
                 limit=limit,
+                offset=offset,
+                include_archived=include_archived,
             ),
         }
 
-    @router.post("/saves/{save_id}/memories", dependencies=protected)
-    async def create_story_memory(
-        save_id: str,
-        body: Annotated[dict[str, Any], Body()],
-    ) -> dict[str, Any]:
-        normalized = normalize_save_id(save_id, default_save_id)
+    @router.post(
+        "/saves/{save_id}/memories",
+        dependencies=protected,
+        status_code=status.HTTP_201_CREATED,
+    )
+    async def create_story_memory(save_id: str, body: MemoryCreate) -> dict[str, Any]:
+        normalized, item = await require_save(save_id)
+        if item["archived_at"] is not None:
+            raise HTTPException(status_code=409, detail="restore the story save before editing")
         memory_id = await asyncio.to_thread(
             store.add_memory,
             normalized,
-            memory_type=body.get("type", "note"),
-            content=body.get("content", ""),
-            tags=body.get("tags", []),
-            entities=body.get("entities", []),
-            importance=body.get("importance", 3),
-            story_time=body.get("story_time"),
+            memory_type=body.memory_type,
+            content=body.content,
+            tags=body.tags,
+            entities=body.entities,
+            importance=body.importance,
+            story_time=body.story_time,
         )
         if memory_id is None:
             raise HTTPException(status_code=400, detail="memory content is required")
-        return {"save_id": normalized, "memory_id": memory_id}
+        created = await asyncio.to_thread(store.get_memory, normalized, memory_id)
+        if created and created["archived_at"] is not None:
+            raise HTTPException(
+                status_code=409,
+                detail="an identical archived memory exists; restore it instead",
+            )
+        return {
+            "save_id": normalized,
+            "data": created,
+        }
+
+    @router.patch("/saves/{save_id}/memories/{memory_id}", dependencies=protected)
+    async def update_story_memory(
+        save_id: str,
+        memory_id: int,
+        body: MemoryUpdate,
+    ) -> dict[str, Any]:
+        normalized, save = await require_save(save_id)
+        if save["archived_at"] is not None:
+            raise HTTPException(status_code=409, detail="restore the story save before editing")
+        existing = await asyncio.to_thread(store.get_memory, normalized, memory_id)
+        if existing is None:
+            raise HTTPException(status_code=404, detail="memory not found")
+        if existing["archived_at"] is not None:
+            raise HTTPException(status_code=409, detail="restore the memory before editing")
+        values = body.model_dump(exclude_unset=True)
+        try:
+            await asyncio.to_thread(
+                store.update_memory,
+                normalized,
+                memory_id,
+                memory_type=values.get("memory_type", existing["memory_type"]),
+                content=values.get("content", existing["content"]),
+                tags=values.get("tags", existing["tags"]),
+                entities=values.get("entities", existing["entities"]),
+                importance=values.get("importance", existing["importance"]),
+                story_time=values.get("story_time", existing["story_time"]),
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return {"data": await asyncio.to_thread(store.get_memory, normalized, memory_id)}
+
+    @router.delete("/saves/{save_id}/memories/{memory_id}", dependencies=protected)
+    async def archive_story_memory(save_id: str, memory_id: int) -> dict[str, Any]:
+        normalized, _ = await require_save(save_id)
+        archived = await asyncio.to_thread(store.archive_memory, normalized, memory_id)
+        if not archived:
+            raise HTTPException(status_code=404, detail="active memory not found")
+        return {"save_id": normalized, "memory_id": memory_id, "archived": True}
+
+    @router.post(
+        "/saves/{save_id}/memories/{memory_id}/restore",
+        dependencies=protected,
+    )
+    async def restore_story_memory(save_id: str, memory_id: int) -> dict[str, Any]:
+        normalized, _ = await require_save(save_id)
+        restored = await asyncio.to_thread(store.restore_memory, normalized, memory_id)
+        if not restored:
+            raise HTTPException(status_code=404, detail="archived memory not found")
+        return {"save_id": normalized, "memory_id": memory_id, "archived": False}
 
     return router

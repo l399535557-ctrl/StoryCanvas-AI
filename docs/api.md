@@ -38,7 +38,7 @@ Example:
 The response follows the OpenAI chat-completions shape. When image generation is active, the
 assistant content ends with a Markdown image URL served by the gateway.
 
-Streaming requests use Server-Sent Events and finish with `data: [DONE]`. Version 0.2 buffers the
+Streaming requests use Server-Sent Events and finish with `data: [DONE]`. The gateway buffers the
 turn so the optional image stays attached to the same assistant message, then emits the result in
 small SSE chunks for compatibility with chat clients while keeping text and the optional image in
 one logical assistant message.
@@ -59,12 +59,43 @@ Set `MEMORY_ENABLED=false` to disable retrieval and persistence, or
 
 ## `GET /v1/story/saves`
 
-Lists saves, the active save ID, and per-save counts. Requires bearer authentication.
+Lists saves, the active save ID, and per-save counts. Pass `include_archived=true` to include
+recoverably archived saves.
+
+## `POST /v1/story/saves`
+
+Creates an explicit story save. `id` is optional and is derived from `name` when omitted.
+
+```json
+{"id": "observatory-campaign", "name": "The Observatory Campaign"}
+```
+
+## `PATCH /v1/story/saves/{save_id}`
+
+Renames an active save without changing its stable ID.
+
+```json
+{"name": "Observatory - Second Playthrough"}
+```
+
+## `DELETE /v1/story/saves/{save_id}`
+
+Archives a save instead of physically deleting it. The active save cannot be archived until the
+client switches to another save. The configured default save cannot be archived because it is the
+fallback for requests that do not specify a save.
+
+## `POST /v1/story/saves/{save_id}/restore`
+
+Restores an archived save with its turns and memories intact.
+
+## `GET /v1/story/saves/{save_id}/turns`
+
+Returns newest-first story turns. Use `limit` (1-200) and `offset` for pagination.
 
 ## `GET /v1/story/saves/{save_id}/memories`
 
-Lists up to 100 memories from one save. The optional `limit` query parameter controls the result
-count.
+Lists memories from one save. Use `limit` (1-500), `offset`, and `include_archived` for pagination
+and archive management.
 
 ## `POST /v1/story/saves/{save_id}/memories`
 
@@ -80,6 +111,19 @@ Adds a memory explicitly:
   "story_time": "chapter-2"
 }
 ```
+
+## `PATCH /v1/story/saves/{save_id}/memories/{memory_id}`
+
+Partially updates a memory. Any omitted field keeps its current value. The accepted fields are
+`type`, `content`, `tags`, `entities`, `importance`, and `story_time`.
+
+## `DELETE /v1/story/saves/{save_id}/memories/{memory_id}`
+
+Archives a memory. Archived memories are excluded from normal lists and RAG retrieval.
+
+## `POST /v1/story/saves/{save_id}/memories/{memory_id}/restore`
+
+Restores an archived memory.
 
 ## `GET /images/{filename}`
 

@@ -100,7 +100,8 @@ class MemoryStore:
                     id TEXT PRIMARY KEY,
                     name TEXT NOT NULL,
                     created_at INTEGER NOT NULL,
-                    updated_at INTEGER NOT NULL
+                    updated_at INTEGER NOT NULL,
+                    archived_at INTEGER
                 );
 
                 CREATE TABLE IF NOT EXISTS story_turns (
@@ -127,6 +128,7 @@ class MemoryStore:
                     last_accessed_at INTEGER,
                     access_count INTEGER NOT NULL DEFAULT 0,
                     embedding_json TEXT,
+                    archived_at INTEGER,
                     UNIQUE(save_id, fingerprint)
                 );
 
@@ -138,6 +140,19 @@ class MemoryStore:
                     ON memories(save_id, memory_type);
                 """
             )
+            save_columns = {
+                str(row["name"])
+                for row in connection.execute("PRAGMA table_info(story_saves)").fetchall()
+            }
+            if "archived_at" not in save_columns:
+                connection.execute("ALTER TABLE story_saves ADD COLUMN archived_at INTEGER")
+            memory_columns = {
+                str(row["name"])
+                for row in connection.execute("PRAGMA table_info(memories)").fetchall()
+            }
+            if "archived_at" not in memory_columns:
+                connection.execute("ALTER TABLE memories ADD COLUMN archived_at INTEGER")
+            connection.execute("PRAGMA user_version = 2")
             try:
                 connection.executescript(
                     """
@@ -218,7 +233,7 @@ class MemoryStore:
             )
         return normalized
 
-    def list_saves(self) -> list[dict[str, Any]]:
+    def list_saves(self, *, include_archived: bool = False) -> list[dict[str, Any]]:
         with self._connect() as connection:
             rows = connection.execute(
                 """
@@ -227,16 +242,81 @@ class MemoryStore:
                     s.name,
                     s.created_at,
                     s.updated_at,
+                    s.archived_at,
                     COUNT(DISTINCT m.id) AS memory_count,
                     COUNT(DISTINCT t.id) AS turn_count
                 FROM story_saves AS s
-                LEFT JOIN memories AS m ON m.save_id = s.id
+                LEFT JOIN memories AS m ON m.save_id = s.id AND m.archived_at IS NULL
                 LEFT JOIN story_turns AS t ON t.save_id = s.id
+                WHERE (? = 1 OR s.archived_at IS NULL)
                 GROUP BY s.id
                 ORDER BY s.updated_at DESC
-                """
+                """,
+                (1 if include_archived else 0,),
             ).fetchall()
         return [dict(row) for row in rows]
+
+    def get_save(self, save_id: object) -> dict[str, Any] | None:
+        normalized = normalize_save_id(save_id)
+        with self._connect() as connection:
+            row = connection.execute(
+                """
+                SELECT
+                    s.id, s.name, s.created_at, s.updated_at, s.archived_at,
+                    COUNT(DISTINCT m.id) AS memory_count,
+                    COUNT(DISTINCT t.id) AS turn_count
+                FROM story_saves AS s
+                LEFT JOIN memories AS m ON m.save_id = s.id AND m.archived_at IS NULL
+                LEFT JOIN story_turns AS t ON t.save_id = s.id
+                WHERE s.id = ?
+                GROUP BY s.id
+                """,
+                (normalized,),
+            ).fetchone()
+        return dict(row) if row else None
+
+    def rename_save(self, save_id: object, name: object) -> bool:
+        normalized = normalize_save_id(save_id)
+        clean_name = _clean_text(name, 120)
+        if not clean_name:
+            raise ValueError("save name is required")
+        with self._connect() as connection:
+            cursor = connection.execute(
+                """
+                UPDATE story_saves
+                SET name = ?, updated_at = ?
+                WHERE id = ? AND archived_at IS NULL
+                """,
+                (clean_name, int(time.time()), normalized),
+            )
+        return cursor.rowcount > 0
+
+    def archive_save(self, save_id: object) -> bool:
+        normalized = normalize_save_id(save_id)
+        now = int(time.time())
+        with self._connect() as connection:
+            cursor = connection.execute(
+                """
+                UPDATE story_saves
+                SET archived_at = ?, updated_at = ?
+                WHERE id = ? AND archived_at IS NULL
+                """,
+                (now, now, normalized),
+            )
+        return cursor.rowcount > 0
+
+    def restore_save(self, save_id: object) -> bool:
+        normalized = normalize_save_id(save_id)
+        with self._connect() as connection:
+            cursor = connection.execute(
+                """
+                UPDATE story_saves
+                SET archived_at = NULL, updated_at = ?
+                WHERE id = ? AND archived_at IS NOT NULL
+                """,
+                (int(time.time()), normalized),
+            )
+        return cursor.rowcount > 0
 
     def record_turn(self, save_id: object, user_text: str, assistant_text: str) -> int:
         normalized = self.ensure_save(save_id)
@@ -259,6 +339,29 @@ class MemoryStore:
                 (now, normalized),
             )
             return int(cursor.lastrowid)
+
+    def list_turns(
+        self,
+        save_id: object,
+        *,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> list[dict[str, Any]]:
+        normalized = normalize_save_id(save_id)
+        clean_limit = max(1, min(200, int(limit)))
+        clean_offset = max(0, int(offset))
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT id, user_text, assistant_text, created_at
+                FROM story_turns
+                WHERE save_id = ?
+                ORDER BY id DESC
+                LIMIT ? OFFSET ?
+                """,
+                (normalized, clean_limit, clean_offset),
+            ).fetchall()
+        return [dict(row) for row in rows]
 
     def add_memory(
         self,
@@ -288,6 +391,15 @@ class MemoryStore:
         fingerprint = hashlib.sha256(fingerprint_source.encode("utf-8")).hexdigest()
         now = int(time.time())
         with self._connect() as connection:
+            existing = connection.execute(
+                """
+                SELECT id, archived_at FROM memories
+                WHERE save_id = ? AND fingerprint = ?
+                """,
+                (normalized, fingerprint),
+            ).fetchone()
+            if existing is not None and existing["archived_at"] is not None:
+                return int(existing["id"])
             cursor = connection.execute(
                 """
                 INSERT INTO memories(
@@ -346,7 +458,7 @@ class MemoryStore:
                 SELECT m.id, bm25(memory_fts, 1.0, 1.7, 2.0) AS rank
                 FROM memory_fts
                 JOIN memories AS m ON m.id = memory_fts.rowid
-                WHERE memory_fts MATCH ? AND m.save_id = ?
+                WHERE memory_fts MATCH ? AND m.save_id = ? AND m.archived_at IS NULL
                 ORDER BY rank
                 LIMIT ?
                 """,
@@ -381,7 +493,7 @@ class MemoryStore:
             rows = connection.execute(
                 """
                 SELECT * FROM memories
-                WHERE save_id = ?
+                WHERE save_id = ? AND archived_at IS NULL
                 ORDER BY updated_at DESC
                 LIMIT ?
                 """,
@@ -443,20 +555,32 @@ class MemoryStore:
                 )
         return selected
 
-    def list_memories(self, save_id: object, *, limit: int = 100) -> list[dict[str, Any]]:
-        normalized = self.ensure_save(save_id)
+    def list_memories(
+        self,
+        save_id: object,
+        *,
+        limit: int = 100,
+        offset: int = 0,
+        include_archived: bool = False,
+    ) -> list[dict[str, Any]]:
+        normalized = normalize_save_id(save_id)
         with self._connect() as connection:
             rows = connection.execute(
                 """
                 SELECT id, memory_type, content, tags_json, entities_json,
                        importance, story_time, source_turn_id, created_at,
-                       updated_at, last_accessed_at, access_count
+                       updated_at, last_accessed_at, access_count, archived_at
                 FROM memories
-                WHERE save_id = ?
+                WHERE save_id = ? AND (? = 1 OR archived_at IS NULL)
                 ORDER BY importance DESC, updated_at DESC
-                LIMIT ?
+                LIMIT ? OFFSET ?
                 """,
-                (normalized, max(1, min(500, int(limit)))),
+                (
+                    normalized,
+                    1 if include_archived else 0,
+                    max(1, min(500, int(limit))),
+                    max(0, int(offset)),
+                ),
             ).fetchall()
         result: list[dict[str, Any]] = []
         for row in rows:
@@ -466,24 +590,168 @@ class MemoryStore:
             result.append(item)
         return result
 
+    def get_memory(self, save_id: object, memory_id: int) -> dict[str, Any] | None:
+        normalized = normalize_save_id(save_id)
+        with self._connect() as connection:
+            row = connection.execute(
+                """
+                SELECT id, memory_type, content, tags_json, entities_json,
+                       importance, story_time, source_turn_id, created_at,
+                       updated_at, last_accessed_at, access_count, archived_at
+                FROM memories
+                WHERE id = ? AND save_id = ?
+                """,
+                (int(memory_id), normalized),
+            ).fetchone()
+        if row is None:
+            return None
+        item = dict(row)
+        item["tags"] = json.loads(item.pop("tags_json") or "[]")
+        item["entities"] = json.loads(item.pop("entities_json") or "[]")
+        return item
+
+    def update_memory(
+        self,
+        save_id: object,
+        memory_id: int,
+        *,
+        memory_type: object,
+        content: object,
+        tags: object = None,
+        entities: object = None,
+        importance: object = 3,
+        story_time: object = None,
+    ) -> bool:
+        normalized = normalize_save_id(save_id)
+        clean_type = _clean_text(memory_type, 32).casefold() or "event"
+        clean_content = _clean_text(content, 1000)
+        if not clean_content:
+            raise ValueError("memory content is required")
+        clean_tags = _clean_list(tags)
+        clean_entities = _clean_list(entities, limit=10)
+        try:
+            clean_importance = max(1, min(5, int(importance)))
+        except (TypeError, ValueError):
+            clean_importance = 3
+        clean_story_time = _clean_text(story_time, 120) or None
+        fingerprint = hashlib.sha256(
+            f"{clean_type}|{clean_content.casefold()}".encode()
+        ).hexdigest()
+        try:
+            with self._connect() as connection:
+                cursor = connection.execute(
+                    """
+                    UPDATE memories
+                    SET memory_type = ?, content = ?, tags_json = ?, entities_json = ?,
+                        importance = ?, story_time = ?, fingerprint = ?, updated_at = ?
+                    WHERE id = ? AND save_id = ? AND archived_at IS NULL
+                    """,
+                    (
+                        clean_type,
+                        clean_content,
+                        json.dumps(clean_tags, ensure_ascii=False),
+                        json.dumps(clean_entities, ensure_ascii=False),
+                        clean_importance,
+                        clean_story_time,
+                        fingerprint,
+                        int(time.time()),
+                        int(memory_id),
+                        normalized,
+                    ),
+                )
+        except sqlite3.IntegrityError as exc:
+            raise ValueError("an identical memory already exists in this save") from exc
+        return cursor.rowcount > 0
+
+    def archive_memory(self, save_id: object, memory_id: int) -> bool:
+        normalized = normalize_save_id(save_id)
+        now = int(time.time())
+        with self._connect() as connection:
+            cursor = connection.execute(
+                """
+                UPDATE memories
+                SET archived_at = ?, updated_at = ?
+                WHERE id = ? AND save_id = ? AND archived_at IS NULL
+                """,
+                (now, now, int(memory_id), normalized),
+            )
+        return cursor.rowcount > 0
+
+    def restore_memory(self, save_id: object, memory_id: int) -> bool:
+        normalized = normalize_save_id(save_id)
+        with self._connect() as connection:
+            cursor = connection.execute(
+                """
+                UPDATE memories
+                SET archived_at = NULL, updated_at = ?
+                WHERE id = ? AND save_id = ? AND archived_at IS NOT NULL
+                """,
+                (int(time.time()), int(memory_id), normalized),
+            )
+        return cursor.rowcount > 0
+
     def stats(self, save_id: object | None = None) -> dict[str, Any]:
         with self._connect() as connection:
             if save_id is None:
                 save_count = int(
-                    connection.execute("SELECT COUNT(*) FROM story_saves").fetchone()[0]
+                    connection.execute(
+                        "SELECT COUNT(*) FROM story_saves WHERE archived_at IS NULL"
+                    ).fetchone()[0]
+                )
+                archived_save_count = int(
+                    connection.execute(
+                        "SELECT COUNT(*) FROM story_saves WHERE archived_at IS NOT NULL"
+                    ).fetchone()[0]
                 )
                 memory_count = int(
-                    connection.execute("SELECT COUNT(*) FROM memories").fetchone()[0]
+                    connection.execute(
+                        "SELECT COUNT(*) FROM memories WHERE archived_at IS NULL"
+                    ).fetchone()[0]
+                )
+                archived_memory_count = int(
+                    connection.execute(
+                        "SELECT COUNT(*) FROM memories WHERE archived_at IS NOT NULL"
+                    ).fetchone()[0]
                 )
                 turn_count = int(
                     connection.execute("SELECT COUNT(*) FROM story_turns").fetchone()[0]
                 )
             else:
                 normalized = normalize_save_id(save_id)
-                save_count = 1
+                save_count = int(
+                    connection.execute(
+                        """
+                        SELECT COUNT(*) FROM story_saves
+                        WHERE id = ? AND archived_at IS NULL
+                        """,
+                        (normalized,),
+                    ).fetchone()[0]
+                )
+                archived_save_count = int(
+                    connection.execute(
+                        """
+                        SELECT COUNT(*) FROM story_saves
+                        WHERE id = ? AND archived_at IS NOT NULL
+                        """,
+                        (normalized,),
+                    ).fetchone()[0]
+                )
                 memory_count = int(
                     connection.execute(
-                        "SELECT COUNT(*) FROM memories WHERE save_id = ?", (normalized,)
+                        """
+                        SELECT COUNT(*) FROM memories
+                        WHERE save_id = ? AND archived_at IS NULL
+                        """,
+                        (normalized,),
+                    ).fetchone()[0]
+                )
+                archived_memory_count = int(
+                    connection.execute(
+                        """
+                        SELECT COUNT(*) FROM memories
+                        WHERE save_id = ? AND archived_at IS NOT NULL
+                        """,
+                        (normalized,),
                     ).fetchone()[0]
                 )
                 turn_count = int(
@@ -495,6 +763,8 @@ class MemoryStore:
             "database": str(self.path),
             "fts_enabled": self._fts_enabled,
             "save_count": save_count,
+            "archived_save_count": archived_save_count,
             "memory_count": memory_count,
+            "archived_memory_count": archived_memory_count,
             "turn_count": turn_count,
         }

@@ -3,7 +3,23 @@
 All notable public changes are recorded here. Local-only character data, credentials, generated
 media, model weights, and adult-oriented prompt rules are intentionally excluded.
 
-## Unreleased - 2026-10-03
+## 0.3.0 - 2026-10-03
+
+### Added
+
+- Authenticated create, rename, archive, and restore operations for story saves.
+- Paginated turn-history queries scoped to one story save.
+- Partial update, archive, and restore operations for durable memories.
+- Recoverable soft deletion so routine data management does not destroy story data.
+- Automatic migration of version 1 SQLite databases to schema version 2.
+- Validation and regression coverage for data isolation, pagination, editing, archive/restore,
+  archived-memory retrieval exclusion, and legacy database migration.
+
+### Changed
+
+- Save and memory list endpoints support pagination or archived-record visibility where applicable.
+- Archived memories are excluded from RAG retrieval and normal counts.
+- Archived saves cannot be edited, and the active save cannot be archived accidentally.
 
 ### Documentation
 

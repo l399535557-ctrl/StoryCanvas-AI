@@ -1,8 +1,62 @@
 import asyncio
+import sqlite3
 from pathlib import Path
 
 from storycanvas.memory_rag import MemoryRAGService
 from storycanvas.memory_store import MemoryStore, normalize_save_id
+
+
+def test_memory_store_migrates_version_one_database(tmp_path: Path) -> None:
+    database = tmp_path / "memory.sqlite3"
+    with sqlite3.connect(database) as connection:
+        connection.executescript(
+            """
+            CREATE TABLE story_saves (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL
+            );
+            CREATE TABLE story_turns (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                save_id TEXT NOT NULL REFERENCES story_saves(id) ON DELETE CASCADE,
+                user_text TEXT NOT NULL,
+                assistant_text TEXT NOT NULL,
+                created_at INTEGER NOT NULL
+            );
+            CREATE TABLE memories (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                save_id TEXT NOT NULL REFERENCES story_saves(id) ON DELETE CASCADE,
+                memory_type TEXT NOT NULL,
+                content TEXT NOT NULL,
+                tags_json TEXT NOT NULL DEFAULT '[]',
+                entities_json TEXT NOT NULL DEFAULT '[]',
+                importance INTEGER NOT NULL DEFAULT 3,
+                story_time TEXT,
+                source_turn_id INTEGER REFERENCES story_turns(id) ON DELETE SET NULL,
+                fingerprint TEXT NOT NULL,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL,
+                last_accessed_at INTEGER,
+                access_count INTEGER NOT NULL DEFAULT 0,
+                embedding_json TEXT,
+                UNIQUE(save_id, fingerprint)
+            );
+            """
+        )
+
+    MemoryStore(database)
+    with sqlite3.connect(database) as connection:
+        save_columns = {
+            row[1] for row in connection.execute("PRAGMA table_info(story_saves)")
+        }
+        memory_columns = {
+            row[1] for row in connection.execute("PRAGMA table_info(memories)")
+        }
+        user_version = connection.execute("PRAGMA user_version").fetchone()[0]
+    assert "archived_at" in save_columns
+    assert "archived_at" in memory_columns
+    assert user_version == 2
 
 
 def test_memory_store_isolates_saves_and_retrieves_chinese(tmp_path: Path) -> None:
@@ -65,3 +119,52 @@ def test_local_rag_capture_and_context_injection(tmp_path: Path) -> None:
     assert message is not None
     assert "月纹钥匙" in message["content"]
     assert store.stats("demo")["turn_count"] == 1
+
+
+def test_data_management_is_recoverable_and_save_scoped(tmp_path: Path) -> None:
+    store = MemoryStore(tmp_path / "memory.sqlite3")
+    store.ensure_save("demo", "演示存档")
+    assert store.rename_save("demo", "重命名后的存档") is True
+    assert store.get_save("demo")["name"] == "重命名后的存档"
+
+    first_turn = store.record_turn("demo", "第一轮", "第一轮回复")
+    second_turn = store.record_turn("demo", "第二轮", "第二轮回复")
+    assert [item["id"] for item in store.list_turns("demo", limit=1)] == [second_turn]
+    assert store.list_turns("demo", limit=1, offset=1)[0]["id"] == first_turn
+
+    memory_id = store.add_memory(
+        "demo",
+        memory_type="fact",
+        content="旧内容",
+        tags=["旧标签"],
+        importance=2,
+    )
+    assert memory_id is not None
+    assert store.update_memory(
+        "demo",
+        memory_id,
+        memory_type="world",
+        content="钟楼北门只在满月时开启。",
+        tags=["钟楼", "满月"],
+        entities=["钟楼"],
+        importance=5,
+        story_time="第二章",
+    )
+    assert store.get_memory("demo", memory_id)["importance"] == 5
+    assert store.retrieve("demo", "满月时去钟楼北门")[0].id == memory_id
+
+    assert store.archive_memory("demo", memory_id) is True
+    assert store.list_memories("demo") == []
+    assert store.retrieve("demo", "满月时去钟楼北门") == []
+    archived = store.list_memories("demo", include_archived=True)
+    assert archived[0]["archived_at"] is not None
+    assert store.restore_memory("demo", memory_id) is True
+    assert store.list_memories("demo")[0]["id"] == memory_id
+
+    assert store.archive_save("demo") is True
+    assert store.list_saves() == []
+    assert store.list_saves(include_archived=True)[0]["archived_at"] is not None
+    store.ensure_save("demo")
+    assert store.list_saves() == []
+    assert store.restore_save("demo") is True
+    assert store.list_saves()[0]["id"] == "demo"

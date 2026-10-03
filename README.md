@@ -1,11 +1,13 @@
 # StoryCanvas AI
 
+[简体中文](README.zh-CN.md) | **English**
+
 StoryCanvas AI is a local-first orchestration gateway for illustrated text adventures. It connects
 an OpenAI-compatible language model to a local ComfyUI instance, then appends a generated scene to
 the same assistant response. Chatbox, SillyTavern, a custom web client, or any compatible client can
 use it through the standard `/v1/chat/completions` API.
 
-> Status: portfolio-ready v0.2. The public configuration is intended for general-audience fictional
+> Status: public backend v0.11.0 with 28 passing automated tests. The public configuration is intended for general-audience fictional
 > adventures and deliberately excludes explicit sexual imagery and graphic gore.
 
 ![StoryCanvas AI demo: an explorer beneath a floating observatory](docs/assets/storycanvas-demo.webp)
@@ -26,6 +28,8 @@ instructions. StoryCanvas separates those responsibilities:
 - OpenAI-compatible `/v1/models` and `/v1/chat/completions` endpoints.
 - Provider-agnostic text model configuration.
 - Local ComfyUI generation with no cloud image API dependency.
+- Model-independent image backend contract; the public default is `comfy-sdxl` and future Qwen or
+  enhanced SDXL adapters do not need to change the orchestration layer.
 - Chinese and English controls: `/图`, `/图开`, `/图关`, `/image`, `/image-on`, `/image-off`.
 - Hash-prefixed aliases (`#图`, `#图开`, `#图关`) for mobile clients that reserve slash commands.
 - Stateful automatic illustration mode.
@@ -87,8 +91,8 @@ Model weights and ComfyUI are intentionally not bundled in this repository.
 ## Quick start
 
 ```powershell
-git clone https://github.com/YOUR_NAME/storycanvas-ai.git
-cd storycanvas-ai
+git clone https://github.com/l399535557-ctrl/StoryCanvas-AI.git
+cd StoryCanvas-AI
 powershell -ExecutionPolicy Bypass -File .\scripts\setup.ps1
 ```
 
@@ -99,6 +103,7 @@ LLM_API_KEY=your-key
 LLM_BASE_URL=https://api.deepseek.com
 LLM_MODEL=deepseek-chat
 GATEWAY_API_KEY=generate-a-long-random-value
+IMAGE_BACKEND=comfy-sdxl
 CHECKPOINT_NAME=your-sdxl-checkpoint.safetensors
 ```
 
@@ -145,9 +150,10 @@ Clients may also select a save with `story_save_id`, `conversation_id`, or the
 .\.venv\Scripts\python.exe -m ruff check .
 ```
 
-The unit suite validates command parsing, public content policy, structured prompt compilation,
-the Core workflow, optional detected-face refinement, save isolation, memory extraction, and RAG
-context injection.
+The 28-test suite validates command parsing, public content policy, structured prompt compilation,
+the image-backend contract, the Core workflow, optional face refinement, save isolation, memory
+extraction and RAG, migration, conflict handling, task recovery/cancellation/retry, backup/restore,
+request tracing, and publication export.
 Live ComfyUI and provider calls are intentionally kept out of CI.
 
 ## Security and privacy

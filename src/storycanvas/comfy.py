@@ -146,9 +146,14 @@ def build_core_workflow(
 
 
 class ComfyClient:
-    def __init__(self, settings: Settings) -> None:
+    def __init__(self, settings: Settings, *, backend_name: str = "comfy-sdxl") -> None:
         self.settings = settings
+        self._backend_name = backend_name
         self._lock = asyncio.Lock()
+
+    @property
+    def name(self) -> str:
+        return self._backend_name
 
     async def system_stats(self) -> dict[str, Any]:
         async with httpx.AsyncClient(timeout=10.0) as client:

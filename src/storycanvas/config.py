@@ -66,6 +66,7 @@ class Settings:
     log_level: str = "INFO"
     log_file: Path | None = None
     memory_backup_dir: Path | None = None
+    image_backend: str = "comfy-sdxl"
 
     @classmethod
     def load(cls, root: Path | None = None) -> Settings:
@@ -128,6 +129,8 @@ class Settings:
             log_level=os.getenv("LOG_LEVEL", "INFO").strip() or "INFO",
             log_file=log_file,
             memory_backup_dir=backup_dir,
+            image_backend=os.getenv("IMAGE_BACKEND", "comfy-sdxl").strip()
+            or "comfy-sdxl",
         )
 
     def configuration_status(self) -> dict[str, bool]:

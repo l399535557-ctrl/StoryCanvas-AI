@@ -58,7 +58,7 @@ def test_memory_store_migrates_version_one_database(tmp_path: Path) -> None:
     assert "archived_at" in memory_columns
     assert "status" in memory_columns
     assert "supersedes_memory_id" in memory_columns
-    assert user_version == 5
+    assert user_version == 6
 
 
 def test_memory_store_isolates_saves_and_retrieves_chinese(tmp_path: Path) -> None:
@@ -322,7 +322,7 @@ def test_database_backup_restore_and_safety_snapshot(tmp_path: Path) -> None:
     )
     assert original_id is not None
     backup = store.create_database_backup(backups, label="manual")
-    assert backup["schema_version"] == 5
+    assert backup["schema_version"] == 6
     later_id = store.add_memory(
         "demo",
         memory_type="fact",

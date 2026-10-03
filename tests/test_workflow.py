@@ -3,6 +3,7 @@ from pathlib import Path
 
 from storycanvas.comfy import build_core_workflow
 from storycanvas.config import Settings
+from storycanvas.image_backend import ImageBackend, create_image_backend
 
 
 def test_core_workflow_has_only_expected_nodes(tmp_path: Path) -> None:
@@ -64,3 +65,14 @@ def test_core_workflow_has_only_expected_nodes(tmp_path: Path) -> None:
     assert refined["33"]["class_type"] == "FaceDetailer"
     assert refined["33"]["inputs"]["denoise"] == 0.16
     assert refined["7"]["inputs"]["images"] == ["33", 0]
+
+    backend = create_image_backend(settings)
+    assert isinstance(backend, ImageBackend)
+    assert backend.name == "comfy-sdxl"
+
+    try:
+        create_image_backend(replace(settings, image_backend="unknown"))
+    except ValueError as exc:
+        assert "unsupported image backend" in str(exc)
+    else:
+        raise AssertionError("unknown image backends must fail during startup")

@@ -159,7 +159,8 @@ class MemoryStore:
                     prompt_id TEXT,
                     positive_prompt TEXT,
                     negative_prompt TEXT,
-                    retry_of_task_id TEXT
+                    retry_of_task_id TEXT,
+                    backend TEXT NOT NULL DEFAULT 'comfy-sdxl'
                 );
 
                 CREATE INDEX IF NOT EXISTS idx_generation_tasks_save_created
@@ -197,12 +198,13 @@ class MemoryStore:
                 "positive_prompt": "TEXT",
                 "negative_prompt": "TEXT",
                 "retry_of_task_id": "TEXT",
+                "backend": "TEXT NOT NULL DEFAULT 'comfy-sdxl'",
             }.items():
                 if column not in task_columns:
                     connection.execute(
                         f"ALTER TABLE generation_tasks ADD COLUMN {column} {definition}"
                     )
-            connection.execute("PRAGMA user_version = 5")
+            connection.execute("PRAGMA user_version = 6")
             connection.execute(
                 """
                 UPDATE generation_tasks
@@ -1078,6 +1080,7 @@ class MemoryStore:
         request_id: object,
         *,
         retry_of_task_id: object = None,
+        backend: object = "comfy-sdxl",
     ) -> str:
         normalized = self.ensure_save(save_id)
         task_id = uuid.uuid4().hex
@@ -1086,8 +1089,8 @@ class MemoryStore:
             connection.execute(
                 """
                 INSERT INTO generation_tasks(
-                    id, save_id, request_id, status, created_at, retry_of_task_id
-                ) VALUES (?, ?, ?, 'queued', ?, ?)
+                    id, save_id, request_id, status, created_at, retry_of_task_id, backend
+                ) VALUES (?, ?, ?, 'queued', ?, ?, ?)
                 """,
                 (
                     task_id,
@@ -1095,6 +1098,7 @@ class MemoryStore:
                     _clean_text(request_id, 64) or "-",
                     now,
                     _clean_text(retry_of_task_id, 64) or None,
+                    _clean_text(backend, 64) or "comfy-sdxl",
                 ),
             )
         return task_id
@@ -1190,7 +1194,7 @@ class MemoryStore:
                 """
                 SELECT id, save_id, request_id, status, image_filename, error,
                        created_at, started_at, finished_at, duration_seconds,
-                       prompt_id, retry_of_task_id
+                       prompt_id, retry_of_task_id, backend
                 FROM generation_tasks WHERE id = ?
                 """,
                 (_clean_text(task_id, 64),),
@@ -1202,7 +1206,7 @@ class MemoryStore:
             row = connection.execute(
                 """
                 SELECT id, save_id, request_id, status, positive_prompt,
-                       negative_prompt, retry_of_task_id
+                       negative_prompt, retry_of_task_id, backend
                 FROM generation_tasks WHERE id = ?
                 """,
                 (_clean_text(task_id, 64),),
@@ -1226,7 +1230,7 @@ class MemoryStore:
                 """
                 SELECT id, save_id, request_id, status, image_filename, error,
                        created_at, started_at, finished_at, duration_seconds,
-                       prompt_id, retry_of_task_id
+                       prompt_id, retry_of_task_id, backend
                 FROM generation_tasks
                 WHERE (? IS NULL OR save_id = ?) AND (? IS NULL OR status = ?)
                 ORDER BY created_at DESC, id DESC
@@ -1315,7 +1319,7 @@ class MemoryStore:
             if result is None or result[0] != "ok":
                 raise ValueError("database backup failed integrity check")
             schema_version = int(validation.execute("PRAGMA user_version").fetchone()[0])
-            if schema_version > 5:
+            if schema_version > 6:
                 raise ValueError("database backup uses a newer unsupported schema")
 
         safety_backup = self.create_database_backup(

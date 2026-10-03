@@ -50,6 +50,11 @@ the ComfyUI prompt ID are stored for diagnosis. Task APIs intentionally omit pos
 prompts because they can contain private story details. Cancellation is cooperative: the database
 state changes first, then the active poll requests ComfyUI interruption.
 
+The orchestration layer depends on an `ImageBackend` protocol rather than a concrete model family.
+The public default is `comfy-sdxl`; backend identity is recorded with each task. Qwen-Image and
+enhanced SDXL workflows can therefore be attached later without changing story, memory, task,
+logging, backup, or publication modules.
+
 ### Backup and recovery
 
 The data service uses SQLite's online backup API to create consistent whole-database snapshots.

@@ -16,9 +16,10 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 
-from .comfy import ComfyClient, ComfyError
+from .comfy import ComfyError
 from .commands import ImageCommand, parse_command
 from .config import Settings
+from .image_backend import create_image_backend
 from .memory_api import build_memory_router
 from .memory_rag import MemoryRAGService
 from .memory_store import MemoryStore
@@ -88,7 +89,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         cfg.memory_default_save_id,
     )
     upstream = OpenAICompatibleClient(cfg)
-    comfy = ComfyClient(cfg)
+    image_backend = create_image_backend(cfg)
     memory_store = MemoryStore(cfg.memory_database_path)
     memory_state: dict[str, Any] = {"active_save_id": state.active_save_id}
     memory_runtime: dict[str, Any] = {
@@ -120,7 +121,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     app = FastAPI(
         title="StoryCanvas AI",
-        version="0.10.0",
+        version="0.11.0",
         description="OpenAI-compatible text-adventure gateway with local ComfyUI illustrations.",
     )
 
@@ -215,7 +216,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             return item is None or item["status"] == "cancelled"
 
         try:
-            filename, elapsed = await comfy.generate(
+            filename, elapsed = await image_backend.generate(
                 positive,
                 negative,
                 on_queued=on_queued,
@@ -290,6 +291,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             original["save_id"],
             request_id_context.get(),
             retry_of_task_id=task_id,
+            backend=original["backend"],
         )
         await asyncio.to_thread(
             memory_store.set_generation_task_prompts,
@@ -324,7 +326,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         comfy_ok = False
         device = None
         try:
-            stats = await comfy.system_stats()
+            stats = await image_backend.system_stats()
             devices = stats.get("devices") or []
             comfy_ok = True
             device = devices[0].get("name") if devices else None
@@ -335,6 +337,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "status": "ok" if comfy_ok else "degraded",
                 "configuration": cfg.configuration_status(),
                 "comfyui_ok": comfy_ok,
+                "image_backend": image_backend.name,
                 "device": device,
                 "auto_image": state.auto_image,
                 "memory": {
@@ -476,6 +479,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                             memory_store.create_generation_task,
                             save_id,
                             request_id_context.get(),
+                            backend=image_backend.name,
                         )
                         await asyncio.to_thread(
                             memory_store.update_generation_task,

@@ -3,6 +3,27 @@
 All notable public changes are recorded here. Local-only character data, credentials, generated
 media, model weights, and adult-oriented prompt rules are intentionally excluded.
 
+## 0.11.0 - 2026-10-03
+
+### Added
+
+- A model-independent `ImageBackend` protocol and validated backend factory.
+- Explicit `IMAGE_BACKEND=comfy-sdxl` configuration and backend identity in health and task data.
+- Forward-compatible task schema support for retaining which image backend produced each job.
+- Full Chinese README alongside the refreshed English project README.
+
+### Migration readiness
+
+- Story orchestration, task management, logging, backup, and publication export no longer need to
+  know which concrete image model family is selected.
+- Unsupported backend names fail at startup instead of silently selecting an incompatible workflow.
+- SQLite schema version increased to 6 in preparation for later Qwen and enhanced SDXL adapters.
+
+### Verification
+
+- Added backend contract, factory selection, unsupported-backend, schema migration, and task
+  metadata coverage. The full suite remains at 28 passing tests.
+
 ## 0.10.0 - 2026-10-03
 
 ### Added

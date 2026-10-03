@@ -293,6 +293,76 @@ def build_memory_router(
         return {"save_id": normalized, "memory_id": memory_id, "archived": True}
 
     @router.post(
+        "/saves/{save_id}/memories/{memory_id}/conflict",
+        dependencies=protected,
+    )
+    async def mark_story_memory_conflicted(save_id: str, memory_id: int) -> dict[str, Any]:
+        normalized, save = await require_save(save_id)
+        if save["archived_at"] is not None:
+            raise HTTPException(status_code=409, detail="restore the story save before editing")
+        updated = await asyncio.to_thread(
+            store.set_memory_status,
+            normalized,
+            memory_id,
+            "conflicted",
+        )
+        if not updated:
+            raise HTTPException(status_code=404, detail="active memory not found")
+        return {"data": await asyncio.to_thread(store.get_memory, normalized, memory_id)}
+
+    @router.post(
+        "/saves/{save_id}/memories/{memory_id}/activate",
+        dependencies=protected,
+    )
+    async def activate_story_memory(save_id: str, memory_id: int) -> dict[str, Any]:
+        normalized, save = await require_save(save_id)
+        if save["archived_at"] is not None:
+            raise HTTPException(status_code=409, detail="restore the story save before editing")
+        updated = await asyncio.to_thread(
+            store.set_memory_status,
+            normalized,
+            memory_id,
+            "active",
+        )
+        if not updated:
+            raise HTTPException(status_code=404, detail="memory not found")
+        return {"data": await asyncio.to_thread(store.get_memory, normalized, memory_id)}
+
+    @router.post(
+        "/saves/{save_id}/memories/{memory_id}/supersede",
+        dependencies=protected,
+        status_code=status.HTTP_201_CREATED,
+    )
+    async def supersede_story_memory(
+        save_id: str,
+        memory_id: int,
+        body: MemoryCreate,
+    ) -> dict[str, Any]:
+        normalized, save = await require_save(save_id)
+        if save["archived_at"] is not None:
+            raise HTTPException(status_code=409, detail="restore the story save before editing")
+        try:
+            replacement_id = await asyncio.to_thread(
+                store.supersede_memory,
+                normalized,
+                memory_id,
+                memory_type=body.memory_type,
+                content=body.content,
+                tags=body.tags,
+                entities=body.entities,
+                importance=body.importance,
+                story_time=body.story_time,
+            )
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="memory not found") from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return {
+            "superseded_memory_id": memory_id,
+            "data": await asyncio.to_thread(store.get_memory, normalized, replacement_id),
+        }
+
+    @router.post(
         "/saves/{save_id}/memories/{memory_id}/restore",
         dependencies=protected,
     )

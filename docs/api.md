@@ -159,6 +159,21 @@ Archives a memory. Archived memories are excluded from normal lists and RAG retr
 
 Restores an archived memory.
 
+## `POST /v1/story/saves/{save_id}/memories/{memory_id}/conflict`
+
+Marks a questionable memory as `conflicted`. It remains available for review but is immediately
+excluded from RAG retrieval.
+
+## `POST /v1/story/saves/{save_id}/memories/{memory_id}/activate`
+
+Returns a conflicted or superseded memory to the active retrieval set.
+
+## `POST /v1/story/saves/{save_id}/memories/{memory_id}/supersede`
+
+Atomically creates a corrected replacement and marks the old memory as `superseded`. The request
+body is the same as memory creation. The replacement records the old ID in
+`supersedes_memory_id`, retaining a reviewable fact-revision chain.
+
 ## `GET /images/{filename}`
 
 Serves generated WebP files. Only a basename ending in `.webp` is accepted.

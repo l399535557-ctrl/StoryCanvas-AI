@@ -56,7 +56,9 @@ def test_memory_store_migrates_version_one_database(tmp_path: Path) -> None:
         user_version = connection.execute("PRAGMA user_version").fetchone()[0]
     assert "archived_at" in save_columns
     assert "archived_at" in memory_columns
-    assert user_version == 2
+    assert "status" in memory_columns
+    assert "supersedes_memory_id" in memory_columns
+    assert user_version == 3
 
 
 def test_memory_store_isolates_saves_and_retrieves_chinese(tmp_path: Path) -> None:
@@ -222,3 +224,42 @@ def test_save_export_import_and_copy_preserve_relationships(tmp_path: Path) -> N
         assert "already exists" in str(exc)
     else:
         raise AssertionError("import must not overwrite an existing save")
+
+
+def test_conflicted_and_superseded_memories_are_excluded_from_rag(tmp_path: Path) -> None:
+    store = MemoryStore(tmp_path / "memory.sqlite3")
+    old_id = store.add_memory(
+        "demo",
+        memory_type="fact",
+        content="钟楼北门只在满月时开启。",
+        tags=["钟楼", "北门", "满月"],
+        importance=5,
+    )
+    assert old_id is not None
+    assert store.set_memory_status("demo", old_id, "conflicted")
+    assert store.retrieve("demo", "满月时前往钟楼北门") == []
+    assert store.set_memory_status("demo", old_id, "active")
+    assert store.retrieve("demo", "满月时前往钟楼北门")[0].id == old_id
+
+    replacement_id = store.supersede_memory(
+        "demo",
+        old_id,
+        memory_type="fact",
+        content="钟楼北门改为每天午夜开启。",
+        tags=["钟楼", "北门", "午夜"],
+        importance=5,
+    )
+    old_memory = store.get_memory("demo", old_id)
+    replacement = store.get_memory("demo", replacement_id)
+    assert old_memory["status"] == "superseded"
+    assert replacement["status"] == "active"
+    assert replacement["supersedes_memory_id"] == old_id
+    retrieved = store.retrieve("demo", "午夜前往钟楼北门")
+    assert [item.id for item in retrieved] == [replacement_id]
+
+    bundle = store.export_save("demo", include_archived=True)
+    store.import_save(bundle, target_save_id="imported", target_name="导入修订链")
+    imported = store.list_memories("imported", include_archived=True)
+    imported_replacement = next(item for item in imported if item["status"] == "active")
+    imported_old = next(item for item in imported if item["status"] == "superseded")
+    assert imported_replacement["supersedes_memory_id"] == imported_old["id"]

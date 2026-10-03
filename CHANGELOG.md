@@ -3,6 +3,27 @@
 All notable public changes are recorded here. Local-only character data, credentials, generated
 media, model weights, and adult-oriented prompt rules are intentionally excluded.
 
+## 0.5.0 - 2026-10-03
+
+### Added
+
+- Explicit `active`, `conflicted`, and `superseded` lifecycle states for durable memories.
+- Authenticated endpoints to quarantine a conflicting memory, reactivate it, or atomically replace
+  it with a corrected fact.
+- Revision lineage through `supersedes_memory_id`, preserved across JSON export and import.
+- Automatic schema migration from earlier databases to SQLite schema version 3.
+
+### Changed
+
+- RAG retrieval now uses only active memories; conflicted and superseded facts remain visible for
+  audit and recovery but are not injected into model context.
+- Memory list and detail responses expose lifecycle and revision-lineage fields.
+
+### Verification
+
+- Added migration, retrieval exclusion, atomic supersession, lineage import, and API lifecycle
+  coverage. The full suite now contains 20 passing tests.
+
 ## 0.4.0 - 2026-10-03
 
 ### Added

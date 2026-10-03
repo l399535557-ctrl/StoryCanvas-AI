@@ -20,6 +20,10 @@ entities, importance, optional story time, and access metadata. A content finger
 duplicate writes. Retrieval combines SQLite FTS5 when available with token overlap, Chinese
 bigrams, recency, and importance, then formats only the top bounded results for the model context.
 
+Memories retain an auditable lifecycle state. Conflicted and superseded facts stay in SQLite for
+review and recovery, but only active facts are eligible for RAG context injection. A corrected fact
+links back to the memory it supersedes so revisions remain traceable across export and import.
+
 Memory extraction is deterministic and local: it recognizes durable facts from the completed turn
 without making another provider request. This keeps cost and latency predictable, and the feature
 can be disabled independently from retrieval.

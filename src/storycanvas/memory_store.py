@@ -129,6 +129,8 @@ class MemoryStore:
                     access_count INTEGER NOT NULL DEFAULT 0,
                     embedding_json TEXT,
                     archived_at INTEGER,
+                    status TEXT NOT NULL DEFAULT 'active',
+                    supersedes_memory_id INTEGER,
                     UNIQUE(save_id, fingerprint)
                 );
 
@@ -152,7 +154,15 @@ class MemoryStore:
             }
             if "archived_at" not in memory_columns:
                 connection.execute("ALTER TABLE memories ADD COLUMN archived_at INTEGER")
-            connection.execute("PRAGMA user_version = 2")
+            if "status" not in memory_columns:
+                connection.execute(
+                    "ALTER TABLE memories ADD COLUMN status TEXT NOT NULL DEFAULT 'active'"
+                )
+            if "supersedes_memory_id" not in memory_columns:
+                connection.execute(
+                    "ALTER TABLE memories ADD COLUMN supersedes_memory_id INTEGER"
+                )
+            connection.execute("PRAGMA user_version = 3")
             try:
                 connection.executescript(
                     """
@@ -493,7 +503,7 @@ class MemoryStore:
             rows = connection.execute(
                 """
                 SELECT * FROM memories
-                WHERE save_id = ? AND archived_at IS NULL
+                WHERE save_id = ? AND archived_at IS NULL AND status = 'active'
                 ORDER BY updated_at DESC
                 LIMIT ?
                 """,
@@ -569,7 +579,8 @@ class MemoryStore:
                 """
                 SELECT id, memory_type, content, tags_json, entities_json,
                        importance, story_time, source_turn_id, created_at,
-                       updated_at, last_accessed_at, access_count, archived_at
+                       updated_at, last_accessed_at, access_count, archived_at,
+                       status, supersedes_memory_id
                 FROM memories
                 WHERE save_id = ? AND (? = 1 OR archived_at IS NULL)
                 ORDER BY importance DESC, updated_at DESC
@@ -597,7 +608,8 @@ class MemoryStore:
                 """
                 SELECT id, memory_type, content, tags_json, entities_json,
                        importance, story_time, source_turn_id, created_at,
-                       updated_at, last_accessed_at, access_count, archived_at
+                       updated_at, last_accessed_at, access_count, archived_at,
+                       status, supersedes_memory_id
                 FROM memories
                 WHERE id = ? AND save_id = ?
                 """,
@@ -690,6 +702,102 @@ class MemoryStore:
             )
         return cursor.rowcount > 0
 
+    def set_memory_status(
+        self,
+        save_id: object,
+        memory_id: int,
+        status: str,
+    ) -> bool:
+        normalized = normalize_save_id(save_id)
+        clean_status = str(status).strip().casefold()
+        if clean_status not in {"active", "conflicted", "superseded"}:
+            raise ValueError("unsupported memory status")
+        with self._connect() as connection:
+            cursor = connection.execute(
+                """
+                UPDATE memories
+                SET status = ?, updated_at = ?
+                WHERE id = ? AND save_id = ? AND archived_at IS NULL
+                """,
+                (clean_status, int(time.time()), int(memory_id), normalized),
+            )
+        return cursor.rowcount > 0
+
+    def supersede_memory(
+        self,
+        save_id: object,
+        memory_id: int,
+        *,
+        memory_type: object,
+        content: object,
+        tags: object = None,
+        entities: object = None,
+        importance: object = 3,
+        story_time: object = None,
+    ) -> int:
+        """Atomically replace an active memory and retain its revision lineage."""
+        normalized = normalize_save_id(save_id)
+        clean_type = _clean_text(memory_type, 32).casefold() or "event"
+        clean_content = _clean_text(content, 1000)
+        if not clean_content:
+            raise ValueError("memory content is required")
+        clean_tags = _clean_list(tags)
+        clean_entities = _clean_list(entities, limit=10)
+        try:
+            clean_importance = max(1, min(5, int(importance)))
+        except (TypeError, ValueError):
+            clean_importance = 3
+        clean_story_time = _clean_text(story_time, 120) or None
+        fingerprint = hashlib.sha256(
+            f"{clean_type}|{clean_content.casefold()}".encode()
+        ).hexdigest()
+        now = int(time.time())
+        try:
+            with self._connect() as connection:
+                existing = connection.execute(
+                    """
+                    SELECT id FROM memories
+                    WHERE id = ? AND save_id = ? AND archived_at IS NULL
+                    """,
+                    (int(memory_id), normalized),
+                ).fetchone()
+                if existing is None:
+                    raise KeyError("memory not found")
+                cursor = connection.execute(
+                    """
+                    INSERT INTO memories(
+                        save_id, memory_type, content, tags_json, entities_json,
+                        importance, story_time, fingerprint, created_at, updated_at,
+                        status, supersedes_memory_id
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?)
+                    """,
+                    (
+                        normalized,
+                        clean_type,
+                        clean_content,
+                        json.dumps(clean_tags, ensure_ascii=False),
+                        json.dumps(clean_entities, ensure_ascii=False),
+                        clean_importance,
+                        clean_story_time,
+                        fingerprint,
+                        now,
+                        now,
+                        int(memory_id),
+                    ),
+                )
+                replacement_id = int(cursor.lastrowid)
+                connection.execute(
+                    """
+                    UPDATE memories
+                    SET status = 'superseded', updated_at = ?
+                    WHERE id = ? AND save_id = ?
+                    """,
+                    (now, int(memory_id), normalized),
+                )
+        except sqlite3.IntegrityError as exc:
+            raise ValueError("an identical memory already exists in this save") from exc
+        return replacement_id
+
     def export_save(
         self,
         save_id: object,
@@ -722,7 +830,7 @@ class MemoryStore:
                 """
                 SELECT id, memory_type, content, tags_json, entities_json,
                        importance, story_time, source_turn_id, created_at,
-                       updated_at, archived_at
+                       updated_at, archived_at, status, supersedes_memory_id
                 FROM memories
                 WHERE save_id = ? AND (? = 1 OR archived_at IS NULL)
                 ORDER BY id
@@ -813,6 +921,7 @@ class MemoryStore:
                     turn_id_map[old_id] = int(cursor.lastrowid)
 
             imported_memory_count = 0
+            memory_id_map: dict[int, int] = {}
             for item in memories:
                 if not isinstance(item, dict):
                     raise ValueError("invalid memory in story save bundle")
@@ -840,13 +949,16 @@ class MemoryStore:
                     archived_at = int(archived_at) if archived_at is not None else None
                 except (TypeError, ValueError):
                     archived_at = None
+                status = str(item.get("status") or "active").strip().casefold()
+                if status not in {"active", "conflicted", "superseded"}:
+                    status = "active"
                 cursor = connection.execute(
                     """
                     INSERT OR IGNORE INTO memories(
                         save_id, memory_type, content, tags_json, entities_json,
                         importance, story_time, source_turn_id, fingerprint,
-                        created_at, updated_at, archived_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        created_at, updated_at, archived_at, status
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         normalized,
@@ -861,9 +973,35 @@ class MemoryStore:
                         now,
                         now,
                         archived_at,
+                        status,
                     ),
                 )
                 imported_memory_count += cursor.rowcount
+                try:
+                    old_memory_id = int(item.get("id"))
+                except (TypeError, ValueError):
+                    old_memory_id = 0
+                if old_memory_id and cursor.rowcount:
+                    memory_id_map[old_memory_id] = int(cursor.lastrowid)
+
+            for item in memories:
+                if not isinstance(item, dict):
+                    continue
+                try:
+                    old_memory_id = int(item.get("id"))
+                    old_supersedes_id = int(item.get("supersedes_memory_id"))
+                except (TypeError, ValueError):
+                    continue
+                new_memory_id = memory_id_map.get(old_memory_id)
+                new_supersedes_id = memory_id_map.get(old_supersedes_id)
+                if new_memory_id and new_supersedes_id:
+                    connection.execute(
+                        """
+                        UPDATE memories SET supersedes_memory_id = ?
+                        WHERE id = ? AND save_id = ?
+                        """,
+                        (new_supersedes_id, new_memory_id, normalized),
+                    )
 
         return {
             "save_id": normalized,

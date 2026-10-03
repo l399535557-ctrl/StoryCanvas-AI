@@ -238,3 +238,52 @@ def test_story_save_export_import_and_copy_api(tmp_path: Path) -> None:
         )
         assert copied.status_code == 201
         assert copied.json()["data"]["save_id"] == "copy"
+
+
+def test_memory_conflict_and_supersede_api(tmp_path: Path) -> None:
+    with TestClient(create_app(settings_for_test(tmp_path))) as client:
+        headers = {"Authorization": "Bearer gateway-test"}
+        created = client.post(
+            "/v1/story/saves/default/memories",
+            headers=headers,
+            json={
+                "type": "fact",
+                "content": "钟楼北门只在满月时开启。",
+                "tags": ["钟楼", "北门"],
+                "importance": 5,
+            },
+        )
+        assert created.status_code == 201
+        memory_id = created.json()["data"]["id"]
+
+        conflicted = client.post(
+            f"/v1/story/saves/default/memories/{memory_id}/conflict",
+            headers=headers,
+        )
+        assert conflicted.status_code == 200
+        assert conflicted.json()["data"]["status"] == "conflicted"
+        activated = client.post(
+            f"/v1/story/saves/default/memories/{memory_id}/activate",
+            headers=headers,
+        )
+        assert activated.status_code == 200
+        assert activated.json()["data"]["status"] == "active"
+
+        replacement = client.post(
+            f"/v1/story/saves/default/memories/{memory_id}/supersede",
+            headers=headers,
+            json={
+                "type": "fact",
+                "content": "钟楼北门改为每天午夜开启。",
+                "tags": ["钟楼", "北门", "午夜"],
+                "importance": 5,
+            },
+        )
+        assert replacement.status_code == 201
+        replacement_data = replacement.json()["data"]
+        assert replacement_data["supersedes_memory_id"] == memory_id
+        listed = client.get(
+            "/v1/story/saves/default/memories",
+            headers=headers,
+        ).json()["data"]
+        assert {item["status"] for item in listed} == {"active", "superseded"}

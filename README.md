@@ -159,6 +159,7 @@ Review [SECURITY.md](SECURITY.md) before exposing the service to another device.
 
 ## Documentation
 
+- [Current progress and roadmap](docs/progress.md)
 - [Architecture](docs/architecture.md)
 - [Windows deployment](docs/deployment-windows.md)
 - [HTTP API](docs/api.md)

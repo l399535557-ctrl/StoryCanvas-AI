@@ -3,6 +3,17 @@
 All notable public changes are recorded here. Local-only character data, credentials, generated
 media, model weights, and adult-oriented prompt rules are intentionally excluded.
 
+## Unreleased - 2026-10-03
+
+### Documentation
+
+- Defined the graduation-project direction around system completeness rather than extensive
+  research novelty.
+- Added a current completion inventory, engineering-size summary, remaining-system gap analysis,
+  phased implementation order, and concrete acceptance criteria.
+- Updated the project introduction so the next phase prioritizes the web UI, data management,
+  task lifecycle, recovery, export, deployment, and end-to-end verification.
+
 ## 0.2.0 - 2026-09-30
 
 ### Added

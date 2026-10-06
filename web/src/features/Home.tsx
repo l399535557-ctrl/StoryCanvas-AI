@@ -7,7 +7,7 @@ export function Home() {
     <header className="home-header"><Brand/><nav aria-label="首页导航"><a href="#/demo/chat">浏览示例</a><a className="button small secondary" href="#/app/settings">开始使用</a></nav></header>
     <main id="main-content" tabIndex={-1}>
       <section className="hero">
-        <div className="hero-copy"><h1>输入行动，<br/>生成故事与插图。</h1><p>与 AI 进行连续对话。<br/>故事独立保存，重要经历随对话保留。</p>
+        <div className="hero-copy"><h1>接下来，<br/>故事由你推动。</h1><p>与 AI 进行连续对话。<br/>故事独立保存，重要经历随对话保留。</p>
           <div className="hero-actions"><a className="button primary" href="#/app/settings">开始使用 <ArrowRight size={17}/></a><a className="text-button" href="#/demo/chat">浏览示例 <ArrowRight size={15}/></a></div>
         </div>
         <a href="#/demo/chat" className="hero-art" aria-label="浏览星海观测站示例故事"><img src={asset('observatory.webp')} alt="云海之上，旅人仰望星空中的巨大观测装置" fetchPriority="high"/><div className="art-caption"><span>示例故事</span><h2>星海观测站</h2><ArrowRight size={20}/></div></a>

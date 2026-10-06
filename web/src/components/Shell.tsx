@@ -1,44 +1,40 @@
 import { useState, type ReactNode } from 'react'
-import { Activity, Archive, ArrowLeft, BookOpen, Brain, ChevronRight, Images, Menu, MessageCircle, Plus, Settings, Sparkles, X } from 'lucide-react'
+import { Archive, ArrowLeft, BookOpen, Brain, ChevronRight, Images, Info, Menu, Settings, Sparkles, X } from 'lucide-react'
 import { useApp } from '../lib/context'
 import { navigate } from '../lib/utils'
 import type { View } from '../lib/types'
-import { Badge, Brand, Modal, Notifications } from './ui'
+import { Brand, Modal, Notifications } from './ui'
 
-const links = [
-  { view: 'chat', label: '故事工作台', icon: MessageCircle },
-  { view: 'saves', label: '故事存档', icon: Archive },
-  { view: 'memories', label: '长期记忆', icon: Brain },
-  { view: 'gallery', label: '插图画廊', icon: Images },
-  { view: 'tasks', label: '生成任务', icon: Sparkles },
-  { view: 'status', label: '系统状态', icon: Activity },
-] as const
+const titles: Record<View, string> = { chat: '故事', saves: '故事', memories: '记忆', gallery: '插图', tasks: '插图任务', status: '系统管理', settings: '设置' }
+const storyViews: View[] = ['chat', 'memories', 'gallery', 'tasks']
 export function Shell({ children }: { children: ReactNode }) {
-  const { route, demo, saves, selected, chooseSave, health, connected, pending } = useApp()
+  const { route, demo, saves, selected, chooseSave, health, connected, pending, memories } = useApp()
   const [drawer, setDrawer] = useState(false)
+  const [info, setInfo] = useState(false)
   const current = saves.find(s => s.id === selected)
-  const go = (view: View) => { navigate(route.mode, view); setDrawer(false) }
+  const go = (view: View) => { navigate(route.mode, view); setDrawer(false); setInfo(false) }
   const nav = <>
     <div className="sidebar-brand"><Brand compact/></div>
-    <div className={`mode-label ${demo ? '' : 'live'}`}><span className="tiny-dot"/>{demo ? '公开示例 · 只读浏览' : connected ? '我的故事空间' : '等待连接网关'}</div>
-    <nav className="side-nav" aria-label="工作台导航">{links.map(({ view, label, icon: Icon }) => <a key={view} href={`#/${route.mode}/${view}`} onClick={() => setDrawer(false)} aria-current={view === route.view ? 'page' : undefined} className={view === route.view ? 'active' : ''}><Icon size={18} strokeWidth={1.6}/><span>{label}</span>{view === route.view && <span className="nav-dot"/>}</a>)}</nav>
-    <div className="sidebar-stories"><div className="sidebar-section-label"><span>{demo ? '示例故事' : '最近的故事'}</span>{!demo && <button className="icon-button" aria-label="管理或新建故事" onClick={() => go('saves')}><Plus size={16}/></button>}</div>
-      {saves.filter(s => !s.archived_at).slice(0, 5).map(save => <button key={save.id} className={`story-link ${save.id === selected ? 'selected' : ''}`} disabled={!demo && !!pending} onClick={() => { chooseSave(save.id); go('chat') }}><BookOpen size={15}/><span>{save.name}</span></button>)}
-      {!saves.length && <span className="sidebar-empty">连接网关后，你的故事会显示在这里。</span>}
-    </div>
-    <div className="sidebar-bottom"><a href={`#/${route.mode}/settings`} className={route.view === 'settings' ? 'active' : ''} onClick={() => setDrawer(false)}><Settings size={17}/>连接设置</a><a href="#/" onClick={() => setDrawer(false)}><ArrowLeft size={16}/>回到首页</a><div className="sidebar-footnote">STORYCANVAS AI <span>WEB 0.1</span></div></div>
+    {!demo && <button className="new-story button secondary" disabled={!!pending} onClick={() => go('saves')}><Archive size={17}/>全部故事</button>}
+    <nav className="story-navigation" aria-label="故事导航"><div className="sidebar-section-label">{demo ? '示例' : '故事'}</div>
+      {saves.filter(s => !s.archived_at).slice(0, 5).map(save => <button key={save.id} className={`story-link ${save.id === selected && storyViews.includes(route.view) ? 'selected' : ''}`} disabled={!demo && !!pending} onClick={() => { chooseSave(save.id); go('chat') }}><BookOpen size={16}/><span>{save.name}</span></button>)}
+      {!saves.length && <span className="sidebar-empty">连接后显示故事列表。</span>}
+    </nav>
+    <div className="sidebar-bottom"><a href={`#/${route.mode}/settings`} className={['settings', 'status'].includes(route.view) ? 'active' : ''} onClick={() => setDrawer(false)}><Settings size={17}/>设置</a><a href="#/" onClick={() => setDrawer(false)}><ArrowLeft size={16}/>首页</a></div>
   </>
   return <div className={`app-shell view-${route.view}`}>
     <aside className="sidebar">{nav}</aside>
     {drawer && <Modal title="导航与故事" onClose={() => setDrawer(false)}><div className="mobile-sidebar">{nav}</div></Modal>}
-    <div className="main-column"><header className="app-header"><div className="header-left"><button className="icon-button mobile-menu" aria-label="打开导航菜单" onClick={() => setDrawer(true)}><Menu size={21}/></button><span className="breadcrumb">故事空间 <ChevronRight size={13}/></span><span className="header-title">{route.view === 'chat' ? current?.name || '新的冒险' : links.find(l => l.view === route.view)?.label || '连接设置'}</span></div>
-      <div className="header-right">{demo ? <Badge tone="gold">只读示例</Badge> : <span className={`service-dot ${connected && health?.status === 'ok' ? 'online' : ''}`}><span className="tiny-dot"/>{!connected ? '未连接' : !health ? '待检测' : health.comfyui_ok ? '网关已连接' : '插图服务离线'}</span>}<button className="icon-button header-settings" aria-label="打开连接设置" onClick={() => go('settings')}><Settings size={18}/></button></div>
+    <div className="main-column"><header className="app-header"><div className="header-left"><button className="icon-button mobile-menu" aria-label="打开导航菜单" onClick={() => setDrawer(true)}><Menu size={21}/></button>{storyViews.includes(route.view) && route.view !== 'chat' && <a className="icon-button" aria-label="返回对话" href={`#/${route.mode}/chat`}><ArrowLeft size={18}/></a>}{route.view === 'status' && <a className="icon-button" aria-label="返回设置" href={`#/${route.mode}/settings`}><ArrowLeft size={18}/></a>}<span className="header-title">{storyViews.includes(route.view) ? current?.name || '故事' : titles[route.view]}</span>{demo && <span className="mode-label">示例 · 只读</span>}</div>
+      <div className="header-right">{!demo && <span className={`service-dot ${connected && health?.status === 'ok' ? 'online' : ''}`} title={!connected ? '未连接服务' : health?.comfyui_ok ? '服务已连接' : '插图服务不可用'}><span className="tiny-dot"/><span className="service-label">{!connected ? '未连接' : '已连接'}</span></span>}{storyViews.includes(route.view) && current && <button className="story-info-button" aria-label="查看故事信息" onClick={() => setInfo(true)}><Info size={17}/><span>故事信息</span></button>}</div>
     </header>
+    {['memories', 'gallery', 'tasks'].includes(route.view) && <nav className="story-tabs" aria-label="当前故事"><a href={`#/${route.mode}/chat`}>对话</a>{(['memories', 'gallery', 'tasks'] as const).map(view => <a key={view} href={`#/${route.mode}/${view}`} aria-current={route.view === view ? 'page' : undefined}>{titles[view]}</a>)}</nav>}
     <main className="app-main" id="main-content" tabIndex={-1}>{children}</main></div>
+    {info && <Modal title="故事信息" onClose={() => setInfo(false)}><div className="story-details"><h3>{current?.name}</h3><p>{current?.turn_count || 0} 轮对话 · {current?.memory_count || 0} 条记忆</p><nav aria-label="故事详情">{[{ view: 'memories', label: '记忆', detail: '人物、物品与经历', icon: Brain }, { view: 'gallery', label: '插图', detail: '查看已生成的场景', icon: Images }, ...(!demo ? [{ view: 'tasks', label: '插图任务', detail: '状态、取消与重试', icon: Sparkles }] : [])].map(({ view, label, detail, icon: Icon }) => <a key={view} href={`#/${route.mode}/${view}`} onClick={() => setInfo(false)}><Icon size={19}/><div><strong>{label}</strong><span>{detail}</span></div><ChevronRight size={17}/></a>)}</nav>{memories.some(m => !m.archived_at && m.status === 'active') && <div className="memory-preview"><h4>近期记忆</h4>{memories.filter(m => !m.archived_at && m.status === 'active').slice(0, 2).map(m => <p key={m.id}>{m.content}</p>)}</div>}</div></Modal>}
     <Notifications/>
   </div>
 }
 export function ConnectionRequired() {
-  return <div className="connection-required"><span className="large-brand"><Sparkles size={35}/></span><span className="eyebrow">YOUR NEXT ADVENTURE</span><h1>连接网关，<br/>开始你的故事。</h1><p>故事与插图由你的后端生成。<br/>填写网关地址和密钥，即可进入工作台。</p><a className="button primary" href="#/app/settings">设置连接 <ChevronRight size={17}/></a><a className="text-button" href="#/demo/chat">先浏览示例 <ChevronRight size={14}/></a></div>
+  return <div className="connection-required"><BookOpen size={36} strokeWidth={1.3}/><h1>连接服务</h1><p>填写服务地址和网关密钥，开始对话。</p><a className="button primary" href="#/app/settings">设置连接 <ChevronRight size={17}/></a><a className="text-button" href="#/demo/chat">浏览示例</a></div>
 }
 export function DismissibleHelp({ children }: { children: ReactNode }) { const [show, setShow] = useState(true); return show ? <div className="help-note"><div>{children}</div><button className="icon-button" aria-label="关闭说明" onClick={() => setShow(false)}><X size={15}/></button></div> : null }

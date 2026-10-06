@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { AlertCircle, ArrowUpRight, Check, LoaderCircle, Sparkles, X, ZoomIn } from 'lucide-react'
+import { AlertCircle, ArrowUpRight, Check, LoaderCircle, BookOpen, Sparkles, X, ZoomIn } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { useApp } from '../lib/context'
@@ -15,15 +15,15 @@ export function Brand({ compact = false }: { compact?: boolean }) {
 export function Badge({ children, tone = '' }: { children: ReactNode; tone?: string }) { return <span className={`badge ${tone}`}>{children}</span> }
 export function Busy({ label = '加载中' }: { label?: string }) { return <span className="busy"><LoaderCircle size={16} className="spin" />{label}</span> }
 export function Empty({ title, children, icon }: { title: string; children?: ReactNode; icon?: ReactNode }) {
-  return <div className="empty-state"><div className="empty-icon">{icon || <Sparkles size={28}/>}</div><h3>{title}</h3><p>{children}</p></div>
+  return <div className="empty-state"><div className="empty-icon">{icon || <BookOpen size={28} strokeWidth={1.3}/>}</div><h3>{title}</h3><p>{children}</p></div>
 }
 export function ErrorNote({ text, retry }: { text: string; retry?: () => void }) {
   return <div role="alert" className="error-note"><AlertCircle size={18}/><span>{text}</span>{retry && <button className="text-button" onClick={retry}>重新加载</button>}</div>
 }
-export function PageHead({ eyebrow, title, description, actions }: { eyebrow: string; title: string; description: string; actions?: ReactNode }) {
-  return <div className="page-head"><div><span className="eyebrow">{eyebrow}</span><h1>{title}</h1><p>{description}</p></div>{actions && <div className="page-actions">{actions}</div>}</div>
+export function PageHead({ title, description, actions }: { title: string; description?: string; actions?: ReactNode }) {
+  return <div className="page-head"><div><h1>{title}</h1>{description && <p>{description}</p>}</div>{actions && <div className="page-actions">{actions}</div>}</div>
 }
-export function ReadonlyNote() { return <div className="readonly-note"><span className="tiny-dot"/>公开示例 · 内容已预先准备，所有修改操作均已关闭。<a href="#/app/settings">连接网关，开始自己的故事 <ArrowUpRight size={13}/></a></div> }
+export function ReadonlyNote() { return <div className="readonly-note">此示例仅供浏览。<a href="#/app/settings">连接服务 <ArrowUpRight size={13}/></a></div> }
 export function Modal({ title, children, onClose, wide = false, busy = false }: {
   title: string; children: ReactNode; onClose: () => void; wide?: boolean; busy?: boolean
 }) {

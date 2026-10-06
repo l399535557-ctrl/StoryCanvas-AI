@@ -12,7 +12,11 @@ export function Home() {
         </div>
         <a href="#/demo/chat" className="hero-art" aria-label="浏览星海观测站示例故事"><img src={asset('observatory.webp')} alt="云海之上，旅人仰望星空中的巨大观测装置" fetchPriority="high"/><div className="art-caption"><span>示例故事</span><h2>星海观测站</h2><ArrowRight size={20}/></div></a>
       </section>
-      <details className="home-about"><summary>关于 StoryCanvas</summary><p>一个将文本生成、长期记忆与场景配图结合的互动故事系统。输入行动后，系统生成下一段剧情；选择配图时，文字与插图完成后一起返回。</p></details>
+      <details className="home-about"><summary>关于 StoryCanvas</summary>
+        <p>StoryCanvas AI 是一个结合文本生成、长期记忆与场景配图的互动故事系统。你用自己的话描述行动或做出决策，AI 根据已有剧情生成后续内容，让故事随着对话推进。</p>
+        <p>每个故事独立保存对话记录与记忆。系统从对话中提取重要人物、物品和事件，为后续生成提供背景。你可以查看和修正这些记忆，也可以从保存的故事继续，或复制存档尝试不同的选择。</p>
+        <p>需要插图时，系统将本轮剧情转化为场景描述，再生成图片。文字与插图全部完成后一起呈现，图片保留在对应的对话中。公开示例展示了这一过程，无需连接服务即可浏览。</p>
+      </details>
     </main>
     <footer className="home-footer"><span>StoryCanvas AI</span><a href="https://github.com/l399535557-ctrl/StoryCanvas-AI" target="_blank" rel="noopener noreferrer"><Github size={15}/>项目源码</a></footer>
   </div>

@@ -26,7 +26,7 @@ function liveFixture(options: { failChat?: boolean; unsaved?: boolean; secondSav
     if (path === '/v1/story/saves/story-a' && method === 'DELETE') {
       saves = saves.map(s => s.id === 'story-a' ? { ...s, archived_at: 10 } : s); return json({ data: saves[0] })
     }
-    if (/\/turns\?/.test(path)) { const id = path.split('/')[4]; return json({ data: turns[id] || [] }) }
+    if (/\/turns\?/.test(path)) { const id = path.split('/')[4]; return json({ data: (turns[id] || []).map(turn => ({ ...turn, image_tasks: tasks.filter(task => task.turn_id === turn.id) })) }) }
     if (/\/memories\?/.test(path)) return json({ data: memories })
     if (path.includes('/v1/story/tasks?')) return json({ data: tasks })
     if (/\/memories\/\d+$/.test(path) && method === 'PATCH') {
@@ -53,8 +53,8 @@ function connected() { sessionStorage.setItem('storycanvas.token', 'fixture-only
 describe('public, read-only demonstration', () => {
   it('renders the homepage without contacting a gateway', () => {
     const fetcher = vi.fn(); vi.stubGlobal('fetch', fetcher); render(<App/>)
-    expect(screen.getByRole('heading', { name: /你的选择，\s*让\s*故事发生。/ })).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: '浏览示例' })).toHaveAttribute('href', '#/demo/chat')
+    expect(screen.getByRole('heading', { name: /输入行动，\s*生成故事与插图。/ })).toBeInTheDocument()
+    screen.getAllByRole('link', { name: '浏览示例' }).forEach(link => expect(link).toHaveAttribute('href', '#/demo/chat'))
     expect(fetcher).not.toHaveBeenCalled()
   })
   it('shows the sample conversation and related illustration without a composer or network', () => {
@@ -64,10 +64,10 @@ describe('public, read-only demonstration', () => {
     expect(screen.queryByRole('textbox', { name: '输入你的行动或决策' })).not.toBeInTheDocument()
     expect(fetcher).not.toHaveBeenCalled()
   })
-  it('disables all memory mutation actions in demonstration mode', () => {
+  it('omits memory mutation actions in demonstration mode', () => {
     at('#/demo/memories'); const fetcher = vi.fn(); vi.stubGlobal('fetch', fetcher); render(<App/>)
-    expect(screen.getByRole('button', { name: '新增记忆' })).toBeDisabled()
-    screen.getAllByRole('button', { name: '编辑' }).forEach(button => expect(button).toBeDisabled())
+    expect(screen.queryByRole('button', { name: '新增记忆' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '编辑' })).not.toBeInTheDocument()
     expect(fetcher).not.toHaveBeenCalled()
   })
   it('opens and closes the mobile navigation and image viewer', async () => {
@@ -78,12 +78,42 @@ describe('public, read-only demonstration', () => {
     await user.click(screen.getByRole('button', { name: '放大插图：第 3 轮场景' }))
     expect(screen.getByRole('dialog', { name: '第 3 轮场景' })).toBeInTheDocument()
   })
+  it('reveals story details only when requested and keeps its memory route reachable', async () => {
+    at('#/demo/chat'); const fetcher = vi.fn(); vi.stubGlobal('fetch', fetcher); render(<App/>); const user = userEvent.setup()
+    expect(screen.queryByRole('navigation', { name: '故事详情' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('complementary')).not.toHaveClass('context-panel')
+    await user.click(screen.getByRole('button', { name: '查看故事信息' }))
+    const dialog = screen.getByRole('dialog', { name: '故事信息' })
+    await user.click(within(dialog).getByRole('link', { name: /记忆 人物/ }))
+    await screen.findByRole('heading', { name: '记忆' })
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(fetcher).not.toHaveBeenCalled()
+  })
 })
 describe('live-mode API contract fixtures', () => {
+  it('keeps system management discoverable under advanced settings', async () => {
+    at('#/app/settings'); connected(); liveFixture(); render(<App/>); const user = userEvent.setup()
+    expect(screen.getByRole('link', { name: /系统管理 服务诊断/ })).not.toBeVisible()
+    await user.click(screen.getByText('高级与帮助'))
+    await user.click(screen.getByRole('link', { name: /系统管理 服务诊断/ }))
+    await screen.findByText('storycanvas-fixture.sqlite3')
+    expect(window.location.hash).toBe('#/app/status')
+  })
+  it('reveals command options on demand and returns the selected command to the composer', async () => {
+    at('#/app/chat'); connected(); liveFixture(); render(<App/>); const user = userEvent.setup()
+    await screen.findByText('甲的剧情')
+    expect(screen.queryByRole('checkbox', { name: '分块返回' })).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '更多发送选项' }))
+    const dialog = screen.getByRole('dialog', { name: '发送选项' })
+    await user.click(within(dialog).getByText('指令帮助'))
+    await user.click(within(dialog).getByRole('button', { name: '/图 本轮配图' }))
+    expect(screen.getByLabelText('输入你的行动或决策')).toHaveValue('/图 ')
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
   it('validates a gateway and stores only its token in session storage', async () => {
     at('#/app/settings'); liveFixture(); render(<App/>); const user = userEvent.setup()
     await user.type(screen.getByLabelText('网关 API 密钥'), 'fixture-only-token')
-    await user.click(screen.getByRole('button', { name: /验证并进入工作台/ }))
+    await user.click(screen.getByRole('button', { name: '连接服务' }))
     await screen.findByText('甲的剧情')
     expect(sessionStorage.getItem('storycanvas.token')).toBe('fixture-only-token')
     expect(localStorage.getItem('storycanvas.token')).toBeNull()
@@ -162,6 +192,16 @@ describe('live-mode API contract fixtures', () => {
     await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: '取消插图任务' }))
     await waitFor(() => expect(document.querySelector('.badge')?.textContent).toBe('已取消'))
     expect(fetcher.mock.calls.some(([url, init]) => String(url) === '/v1/story/tasks/running-1/cancel' && init?.method === 'POST')).toBe(true)
+  })
+  it('cancels an illustration directly beside its story reply', async () => {
+    at('#/app/chat'); connected()
+    const task: ImageTask = { id: 'inline-1', save_id: 'story-a', turn_id: 1, request_id: 'fixture-request', status: 'running', image_filename: null, error: null, created_at: 1, started_at: 1, finished_at: null, duration_seconds: null, retry_of_task_id: null, backend: 'comfy-sdxl' }
+    const fetcher = liveFixture({ task }); render(<App/>); const user = userEvent.setup()
+    await user.click(await screen.findByRole('button', { name: '取消任务' }))
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: '取消插图任务' }))
+    await screen.findByText('已取消')
+    expect(fetcher.mock.calls.some(([url]) => String(url) === '/v1/story/tasks/inline-1/cancel')).toBe(true)
+    expect(window.location.hash).toBe('#/app/chat')
   })
   it('retries a failed illustration without sending another story generation request', async () => {
     at('#/app/tasks'); connected()

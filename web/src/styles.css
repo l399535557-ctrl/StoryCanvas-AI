@@ -62,7 +62,7 @@ input[type=checkbox] { accent-color: var(--accent); }
 .busy { display: inline-flex; align-items: center; gap: 8px; color: var(--muted); font-size: 13px; }
 .spin { animation: spin 1.4s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
-.skip-link { position: fixed; z-index: 100; top: -100px; left: 20px; background: var(--accent); padding: 12px; border-radius: 8px; }
+.skip-link { position: fixed; z-index: 100; top: -100px; left: 20px; background: var(--accent); color: #24221e; padding: 12px; border-radius: 8px; }
 .skip-link:focus { top: 12px; }
 .fatal-error { max-width: 600px; padding: 80px 24px; margin: auto; }
 .fatal-error p { color: var(--muted); }
@@ -122,9 +122,9 @@ summary { cursor: pointer; }
 .app-main:focus { outline: none; }
 .view-chat .app-main { overflow: hidden; }
 .story-tabs { display: flex; flex: 0 0 48px; gap: 26px; padding: 0 36px; border-bottom: 1px solid var(--border); align-items: center; overflow-x: auto; }
-.story-tabs a { font-size: 13px; color: var(--muted); white-space: nowrap; }
+.story-tabs a { display: inline-flex; align-items: center; min-height: 44px; font-size: 13px; color: var(--muted); white-space: nowrap; }
 .story-tabs a[aria-current=page] { color: #d0c0a5; }
-.story-details > h3 { font-size: 22px; font-weight: 500; margin: 0 0 8px; }
+.story-details > h3 { font-size: 22px; font-weight: 500; margin: 0 0 8px; overflow-wrap: anywhere; }
 .story-details > p { font-size: 13px; color: var(--muted); margin-bottom: 22px; }
 .story-details nav { border-top: 1px solid var(--border); }
 .story-details nav a { display: flex; align-items: center; gap: 14px; padding: 18px 2px; border-bottom: 1px solid var(--border); color: #c5c5cd; }
@@ -271,7 +271,7 @@ summary { cursor: pointer; }
 .gallery-card .scene-figure { margin: 0; }
 .gallery-copy { padding: 18px 2px; }
 .scene-number { color: var(--muted); font-size: 12px; }
-.gallery-copy h2 { margin: 9px 0; font-size: 15px; font-weight: 500; line-height: 1.7; }
+.gallery-copy h2 { margin: 9px 0; font-size: 15px; font-weight: 500; line-height: 1.7; overflow-wrap: anywhere; }
 .gallery-copy p { color: var(--muted); font-size: 12px; margin: 0; }
 /* Settings and recovery */
 .settings-page { max-width: 790px; }
@@ -369,14 +369,19 @@ summary { cursor: pointer; }
   .app-header { padding: 0 22px; }
 }
 @media (max-width: 600px) {
+  .icon-button { width: 44px; height: 44px; flex-shrink: 0; }
   .home { padding: 0 24px; }
   .home-header { height: 76px; }
   .home-header .brand { font-size: 17px; }
+  .home-header .brand, .home-header .button.small { min-height: 44px; }
   .home-header nav { gap: 15px; }
   .home-header nav > a:first-child { display: none; }
   .hero { grid-template-columns: minmax(0,1fr); gap: 35px; padding: 46px 0 38px; }
   .hero h1 { font-size: clamp(31px,7.8vw,43px); letter-spacing: -1px; }
   .hero-copy > p { font-size: 15px; margin-bottom: 25px; }
+  .hero-actions .text-button, .home-footer a { min-height: 44px; }
+  .home-about { padding: 10px 0; }
+  .home-about summary { min-height: 44px; padding: 12px 0; }
   .hero-art { aspect-ratio: 1.05; border-radius: 18px; }
   .art-caption { left: 22px; bottom: 22px; right: 22px; }
   .home-footer { padding-bottom: 26px; }
@@ -384,7 +389,7 @@ summary { cursor: pointer; }
   .header-left, .header-right { gap: 8px; }
   .header-title { max-width: 180px; font-size: 13px; }
   .mode-label { font-size: 11px; }
-  .story-info-button { width: 34px; padding: 7px; }
+  .story-info-button { width: 44px; min-height: 44px; padding: 7px; }
   .story-info-button > span, .service-label { display: none; }
   .story-tabs { padding: 0 22px; gap: 22px; flex-basis: 46px; }
   .conversation { padding: 25px 21px 26px; }
@@ -397,6 +402,9 @@ summary { cursor: pointer; }
   .composer-wrap { padding: 0 14px max(12px,env(safe-area-inset-bottom)); }
   .composer { padding: 13px 13px 9px; border-radius: 15px; }
   .composer textarea { font-size: 16px; height: 58px; }
+  .composer-toggle { min-height: 44px; }
+  .send-button { width: 44px; height: 44px; }
+  .demo-composer .text-button { min-height: 44px; }
   .composer-footnote { display: none; }
   .demo-composer { font-size: 12px; }
   .demo-composer .text-button { font-size: 12px; }

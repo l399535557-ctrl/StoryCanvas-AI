@@ -23,11 +23,12 @@ export function Tasks() {
 
 export function Gallery() {
   const app = useApp()
-  const { demo, turns, api, fail } = app
+  const { demo, turns, api, fail, saves, selected } = app
   const [busy, setBusy] = useState(false)
+  const firstTurn = Math.max(0, (saves.find(save => save.id === selected)?.turn_count || turns.length) - turns.length)
   const pictures = turns.flatMap((turn, index) => turn.image_tasks.filter(task => task.status === 'succeeded' && (demo || task.image_filename)).map(task => ({ task, turn, index })))
   return <div className="standard-page"><PageHead title="插图" description="当前故事已生成的场景。"/>{demo && <ReadonlyNote/>}{app.resourceError && <ErrorNote text={app.resourceError}/>}
-    <div className="gallery-grid">{pictures.map(({ task, turn, index }) => <article className="gallery-card" key={task.id}><SceneImage src={demo ? asset('observatory.webp') : imageURL(`/images/${task.image_filename}`, api.base)!} alt={`故事轮次 #${turn.id} 的插图`}/><div className="gallery-copy"><span className="scene-number">第 {index + 1} 轮</span><h2>{turn.user_text}</h2><p>{demo ? '公开示例插图' : `${task.backend}${task.duration_seconds !== null ? ` · ${task.duration_seconds.toFixed(1)} 秒` : ''}`}</p></div></article>)}</div>
+    <div className="gallery-grid">{pictures.map(({ task, turn, index }) => <article className="gallery-card" key={task.id}><SceneImage src={demo ? asset('observatory.webp') : imageURL(`/images/${task.image_filename}`, api.base)!} alt={`第 ${firstTurn + index + 1} 轮场景`}/><div className="gallery-copy"><span className="scene-number">第 {firstTurn + index + 1} 轮</span><h2>{turn.user_text}</h2><p>{demo ? '公开示例插图' : `${task.backend}${task.duration_seconds !== null ? ` · ${task.duration_seconds.toFixed(1)} 秒` : ''}`}</p></div></article>)}</div>
     {!pictures.length && <Empty title="还没有可展示的插图">当前已加载历史中没有完成的插图。你可以开启配图，或加载更早的历史。</Empty>}
     {!demo && app.canLoadTurns && <button className="button secondary load-more" disabled={busy} onClick={async () => { setBusy(true); try { await app.loadMoreTurns() } catch (e) { fail(e) } finally { setBusy(false) } }}>{busy ? <Busy/> : '加载更早历史中的插图'}</button>}
   </div>

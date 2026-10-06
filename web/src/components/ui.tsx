@@ -28,7 +28,16 @@ export function Modal({ title, children, onClose, wide = false, busy = false }: 
   title: string; children: ReactNode; onClose: () => void; wide?: boolean; busy?: boolean
 }) {
   const ref = useRef<HTMLDialogElement>(null)
-  useEffect(() => { const dialog = ref.current; dialog?.showModal(); return () => { dialog?.close() } }, [])
+  const opener = useRef(document.activeElement)
+  useEffect(() => {
+    const dialog = ref.current
+    const previous = opener.current
+    dialog?.showModal()
+    return () => {
+      dialog?.close()
+      if (previous instanceof HTMLElement && previous.isConnected) previous.focus({ preventScroll: true })
+    }
+  }, [])
   return <dialog ref={ref} className={`modal ${wide ? 'wide' : ''}`} aria-label={title} onCancel={e => { e.preventDefault(); if (!busy) onClose() }} onClick={e => { if (e.target === ref.current && !busy) onClose() }}>
     <div className="modal-head"><h2>{title}</h2><button className="icon-button" aria-label="关闭弹窗" disabled={busy} onClick={onClose}><X size={20}/></button></div>
     <div className="modal-body">{children}</div>

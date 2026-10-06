@@ -9,8 +9,8 @@ beforeEach(() => { history.replaceState(null, '', '/'); sessionStorage.clear(); 
 afterEach(() => vi.unstubAllGlobals())
 function at(hash: string) { history.replaceState(null, '', `/${hash}`) }
 function json(data: unknown, status = 200) { return new Response(JSON.stringify(data), { status, headers: { 'Content-Type': 'application/json' } }) }
-function liveFixture(options: { failChat?: boolean; unsaved?: boolean; secondSave?: boolean; task?: ImageTask } = {}) {
-  let saves: Save[] = [{ ...demoSave, id: 'story-a', name: '故事甲' }]
+function liveFixture(options: { failChat?: boolean; unsaved?: boolean; secondSave?: boolean; task?: ImageTask; turnCount?: number } = {}) {
+  let saves: Save[] = [{ ...demoSave, id: 'story-a', name: '故事甲', turn_count: options.turnCount ?? demoSave.turn_count }]
   if (options.secondSave) saves.push({ ...demoSave, id: 'story-b', name: '故事乙' })
   const turns: Record<string, Turn[]> = { 'story-a': [{ id: 1, user_text: '甲的行动', assistant_text: '甲的剧情', created_at: 1, image_tasks: [] }], 'story-b': [{ id: 2, user_text: '乙的行动', assistant_text: '乙的剧情', created_at: 2, image_tasks: [] }] }
   let tasks = options.task ? [options.task] : []
@@ -53,7 +53,7 @@ function connected() { sessionStorage.setItem('storycanvas.token', 'fixture-only
 describe('public, read-only demonstration', () => {
   it('renders the homepage without contacting a gateway', () => {
     const fetcher = vi.fn(); vi.stubGlobal('fetch', fetcher); render(<App/>)
-    expect(screen.getByRole('heading', { name: /输入行动，\s*生成故事与插图。/ })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { level: 1 })).toBeInTheDocument()
     screen.getAllByRole('link', { name: '浏览示例' }).forEach(link => expect(link).toHaveAttribute('href', '#/demo/chat'))
     expect(fetcher).not.toHaveBeenCalled()
   })
@@ -75,8 +75,12 @@ describe('public, read-only demonstration', () => {
     await user.click(screen.getByRole('button', { name: '打开导航菜单' }))
     expect(screen.getByRole('dialog', { name: '导航与故事' })).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: '关闭弹窗' }))
+    expect(screen.getByRole('button', { name: '打开导航菜单' })).toHaveFocus()
     await user.click(screen.getByRole('button', { name: '放大插图：第 3 轮场景' }))
     expect(screen.getByRole('dialog', { name: '第 3 轮场景' })).toBeInTheDocument()
+    fireEvent(screen.getByRole('dialog'), new Event('cancel', { cancelable: true }))
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '放大插图：第 3 轮场景' })).toHaveFocus()
   })
   it('reveals story details only when requested and keeps its memory route reachable', async () => {
     at('#/demo/chat'); const fetcher = vi.fn(); vi.stubGlobal('fetch', fetcher); render(<App/>); const user = userEvent.setup()
@@ -91,6 +95,16 @@ describe('public, read-only demonstration', () => {
   })
 })
 describe('live-mode API contract fixtures', () => {
+  it('keeps gallery and conversation numbering consistent with partially loaded history', async () => {
+    at('#/app/gallery'); connected()
+    const task: ImageTask = { id: 'scene-42', save_id: 'story-a', turn_id: 1, request_id: 'fixture-request', status: 'succeeded', image_filename: 'scene.webp', error: null, created_at: 1, started_at: 1, finished_at: 2, duration_seconds: 1, retry_of_task_id: null, backend: 'comfy-sdxl' }
+    liveFixture({ task, turnCount: 42 }); render(<App/>); const user = userEvent.setup()
+    expect(await screen.findByText('第 42 轮')).toBeInTheDocument()
+    expect(screen.getByRole('img', { name: '第 42 轮场景' })).toBeInTheDocument()
+    await user.click(screen.getByRole('link', { name: '对话' }))
+    await screen.findByText('甲的剧情')
+    expect(screen.getByText('第 42 轮')).toBeInTheDocument()
+  })
   it('keeps system management discoverable under advanced settings', async () => {
     at('#/app/settings'); connected(); liveFixture(); render(<App/>); const user = userEvent.setup()
     expect(screen.getByRole('link', { name: /系统管理 服务诊断/ })).not.toBeVisible()

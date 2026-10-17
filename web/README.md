@@ -2,7 +2,13 @@
 
 StoryCanvas AI 的独立前端。默认中文、深色界面，同一套页面适配 PC、平板与手机。用户输入行动或决策，后端生成剧情和插图。保持 v0.13.0 后端行为：整轮文本与可选插图都完成后才返回，不宣称文字提前到达。
 
-本分支只修改 `web/`，不修改 Python 后端、数据库、ComfyUI、Windows 启动脚本或生产部署。基线提交：`baf2353a0d2c60dc4b281d5186c4c9b5a460f2f9`。
+应用代码位于 `web/`，GitHub Pages 自动部署配置位于 `.github/workflows/deploy-web.yml`。没有修改 Python 后端、数据库、ComfyUI 或 Windows 启动脚本。后端基线提交：`baf2353a0d2c60dc4b281d5186c4c9b5a460f2f9`。
+
+## 公开网址与自动更新
+
+[打开 StoryCanvas AI](https://l399535557-ctrl.github.io/StoryCanvas-AI/)。首页和三轮图文示例已公开，不需要运行本地开发服务器；真实故事生成需要另行连接后端服务。
+
+在 `frontend/mac-ui` 分支修改并提交 `web/` 后，推送至 GitHub 即自动运行检查、测试、构建和部署。保存本地文件不会直接发布。完整更新步骤、部署配置与回退方式见 [DEPLOYMENT.md](DEPLOYMENT.md)。
 
 ## 本地运行
 

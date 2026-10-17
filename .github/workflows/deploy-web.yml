@@ -1,0 +1,74 @@
+name: Deploy StoryCanvas Web
+
+on:
+  push:
+    branches: [frontend/mac-ui]
+    paths:
+      - web/**
+      - .github/workflows/deploy-web.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: storycanvas-pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      pages: read
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - name: Check out frontend
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Set up Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Read GitHub Pages configuration
+        id: pages
+        uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Check code
+        run: npm run lint
+      - name: Test frontend
+        run: npm run test
+      - name: Build public frontend
+        env:
+          VITE_ASSET_BASE: ${{ steps.pages.outputs.base_path }}/
+          VITE_STATIC_HOST: 'true'
+        run: npm run build
+      - name: Record published revision
+        run: |
+          node --input-type=module -e 'import { writeFileSync } from "node:fs"; writeFileSync("dist/deployment.json", JSON.stringify({ commit: process.env.GITHUB_SHA, branch: process.env.GITHUB_REF_NAME, builtAt: new Date().toISOString() }) + "\n")'
+      - name: Upload public frontend
+        uses: actions/upload-pages-artifact@7b1f4a764d45c48632c6b24a0339c27f5614fb0b # v4
+        with:
+          path: web/dist
+
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: build
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Publish website
+        id: deployment
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4

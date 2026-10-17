@@ -6,7 +6,7 @@ import type { ImageTask, Save, Turn } from './lib/types'
 import { demoMemories, demoSave } from './lib/demo'
 
 beforeEach(() => { history.replaceState(null, '', '/'); sessionStorage.clear(); localStorage.clear() })
-afterEach(() => vi.unstubAllGlobals())
+afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs() })
 function at(hash: string) { history.replaceState(null, '', `/${hash}`) }
 function json(data: unknown, status = 200) { return new Response(JSON.stringify(data), { status, headers: { 'Content-Type': 'application/json' } }) }
 function liveFixture(options: { failChat?: boolean; unsaved?: boolean; secondSave?: boolean; task?: ImageTask; turnCount?: number } = {}) {
@@ -51,6 +51,16 @@ function liveFixture(options: { failChat?: boolean; unsaved?: boolean; secondSav
 function connected() { sessionStorage.setItem('storycanvas.token', 'fixture-only-token'); localStorage.setItem('storycanvas.save', 'story-a') }
 
 describe('public, read-only demonstration', () => {
+  it('requires a separate HTTPS backend on a static public host without sending credentials to the website', async () => {
+    at('#/app/settings'); vi.stubEnv('VITE_STATIC_HOST', 'true')
+    const fetcher = vi.fn(); vi.stubGlobal('fetch', fetcher); render(<App/>); const user = userEvent.setup()
+    expect(screen.getByRole('link', { name: '浏览示例故事' })).toHaveAttribute('href', '#/demo/chat')
+    await user.type(screen.getByLabelText('网关 API 密钥'), 'fixture-only-token')
+    await user.click(screen.getByRole('button', { name: '连接服务' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('HTTPS')
+    expect(fetcher).not.toHaveBeenCalled()
+    expect(sessionStorage.getItem('storycanvas.token')).toBeNull()
+  })
   it('renders the homepage without contacting a gateway', () => {
     const fetcher = vi.fn(); vi.stubGlobal('fetch', fetcher); render(<App/>)
     expect(screen.getByRole('heading', { level: 1 })).toBeInTheDocument()

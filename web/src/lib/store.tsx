@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { ApiError, Gateway } from './api'
 import { AppContext } from './context'
-import { demoMemories, demoSave, demoTask, demoTurns } from './demo'
+import { demoMemories, demoSave, demoTasks, demoTurns } from './demo'
 import type { Backup, Diagnostics, Health, ImageTask, Memory, Route, Save, Turn } from './types'
 import { buildMessages, navigate, readStored, routeFromHash, writeStored } from './utils'
 
@@ -216,7 +216,7 @@ function useAppState() {
     route, demo, connected, api, connection, connect, disconnect,
     saves: demo ? [demoSave] : liveSaves, selected: demo ? demoSave.id : selected, chooseSave,
     turns: demo ? demoTurns : liveTurns, memories: demo ? demoMemories : liveMemories,
-    tasks: demo ? [demoTask] : liveTasks, health, diagnostics, backups,
+    tasks: demo ? demoTasks : liveTasks, health, diagnostics, backups,
     drafts, setDraft, loading: !demo && loading, resourceError: demo ? '' : resourceError, pending, unconfirmedReply,
     notify, fail, notices, dismissNotice, refreshSaves, refreshHealth, refreshStory, refreshSystem,
     send, canLoadTurns, canLoadMemories, canLoadTasks, loadMoreTurns, loadMoreMemories, loadMoreTasks,

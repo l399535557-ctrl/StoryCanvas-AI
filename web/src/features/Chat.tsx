@@ -3,8 +3,7 @@ import { ArrowRight, ArrowUp, BookOpen, ImagePlus, LoaderCircle, MoreHorizontal,
 import { Busy, Empty, ErrorNote, Modal, SceneImage, StoryText, TaskBadge } from '../components/ui'
 import { TaskAction } from '../components/TaskAction'
 import { useApp } from '../lib/context'
-import { asset, imageURL } from '../lib/utils'
-import type { ImageTask } from '../lib/types'
+import { taskImageURL } from '../lib/utils'
 
 export function Chat() {
   const app = useApp()
@@ -28,7 +27,6 @@ export function Chat() {
     const sent = draft.trim()
     if (await send(sent, forceImage, true)) { updateDraft(''); setForceImage(false); area.current?.focus() }
   }
-  const imageForTask = (task: ImageTask) => demo ? asset('observatory.webp') : task.image_filename ? imageURL(`/images/${task.image_filename}`, api.base) : undefined
   return <div className="chat-layout"><div className="chat-main">
     {app.resourceError && <ErrorNote text={app.resourceError} retry={() => app.refreshStory().catch(fail)}/>}
     <div className="chat-scroll" ref={scroll}><div className="conversation">
@@ -37,7 +35,7 @@ export function Chat() {
       {turns.map((turn, index) => <div className="story-turn" key={turn.id}>
         <div className="user-message"><div className="user-bubble">{turn.user_text}</div></div>
         <div className="assistant-message"><div className="assistant-body"><div className="message-label"><strong>StoryCanvas</strong><small>第 {firstTurn + index + 1} 轮</small></div><StoryText text={turn.assistant_text}/>
-          {turn.image_tasks.filter(t => t.status === 'succeeded').map(task => { const src = imageForTask(task); return src ? <SceneImage key={task.id} src={src} alt={`第 ${firstTurn + index + 1} 轮场景`}/> : null })}
+          {turn.image_tasks.filter(t => t.status === 'succeeded').map(task => { const src = taskImageURL(task, api.base, demo); return src ? <SceneImage key={task.id} src={src} alt={`第 ${firstTurn + index + 1} 轮场景`}/> : null })}
           {turn.image_tasks.filter(t => t.status !== 'succeeded').map(task => <div key={task.id} className="inline-task"><TaskBadge status={task.status}/><span>插图</span><TaskAction task={task}/></div>)}
         </div></div>
       </div>)}

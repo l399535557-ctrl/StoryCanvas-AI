@@ -1,5 +1,9 @@
-import type { Message, Route, Turn } from './types'
+import type { ImageTask, Message, Route, Turn } from './types'
 export const asset = (name: string) => `${import.meta.env.BASE_URL}assets/${name}`
+export function taskImageURL(task: ImageTask, base: string, demo = false): string | undefined {
+  if (!task.image_filename) return undefined
+  return demo ? asset(task.image_filename) : imageURL(`/images/${task.image_filename}`, base)
+}
 export const timestamp = (seconds: number) => new Date(seconds * 1000).toLocaleString('zh-CN', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
 export const sizeLabel = (bytes: number) => bytes > 1024 * 1024 ? `${(bytes / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`
 export function routeFromHash(hash: string): Route {

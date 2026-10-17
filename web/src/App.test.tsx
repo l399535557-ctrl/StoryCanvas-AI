@@ -54,14 +54,24 @@ describe('public, read-only demonstration', () => {
   it('renders the homepage without contacting a gateway', () => {
     const fetcher = vi.fn(); vi.stubGlobal('fetch', fetcher); render(<App/>)
     expect(screen.getByRole('heading', { level: 1 })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: '浏览示例故事' })).toHaveAttribute('href', '#/demo/chat')
     screen.getAllByRole('link', { name: '浏览示例' }).forEach(link => expect(link).toHaveAttribute('href', '#/demo/chat'))
     expect(fetcher).not.toHaveBeenCalled()
   })
   it('shows the sample conversation and related illustration without a composer or network', () => {
     at('#/demo/chat'); const fetcher = vi.fn(); vi.stubGlobal('fetch', fetcher); render(<App/>)
     expect(screen.getByText('我拿起月纹钥匙，尝试启动控制台。')).toBeInTheDocument()
-    expect(screen.getByRole('img', { name: '第 3 轮场景' })).toBeInTheDocument()
+    const scenes = [1, 2, 3].map(round => screen.getByRole('img', { name: `第 ${round} 轮场景` }))
+    expect(new Set(scenes.map(image => image.getAttribute('src'))).size).toBe(3)
+    scenes.forEach(image => expect(image.closest('.assistant-body')?.querySelector('.markdown')?.compareDocumentPosition(image)).toBe(Node.DOCUMENT_POSITION_FOLLOWING))
     expect(screen.queryByRole('textbox', { name: '输入你的行动或决策' })).not.toBeInTheDocument()
+    expect(fetcher).not.toHaveBeenCalled()
+  })
+  it('shows the same three scene assets in the sample gallery without a gateway', () => {
+    at('#/demo/gallery'); const fetcher = vi.fn(); vi.stubGlobal('fetch', fetcher); render(<App/>)
+    expect([1, 2, 3].map(round => screen.getByRole('img', { name: `第 ${round} 轮场景` }).getAttribute('src'))).toEqual([
+      '/assets/observatory-hall.webp', '/assets/observatory-console.webp', '/assets/observatory.webp',
+    ])
     expect(fetcher).not.toHaveBeenCalled()
   })
   it('omits memory mutation actions in demonstration mode', () => {

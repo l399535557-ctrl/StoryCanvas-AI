@@ -65,7 +65,7 @@ describe('public, read-only demonstration', () => {
     const fetcher = vi.fn(); vi.stubGlobal('fetch', fetcher); render(<App/>)
     expect(screen.getByRole('heading', { level: 1 })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: '浏览示例故事' })).toHaveAttribute('href', '#/demo/chat')
-    screen.getAllByRole('link', { name: '浏览示例' }).forEach(link => expect(link).toHaveAttribute('href', '#/demo/chat'))
+    expect(screen.getByRole('link', { name: '开始使用' })).toHaveAttribute('href', '#/app/settings')
     expect(fetcher).not.toHaveBeenCalled()
   })
   it('shows the sample conversation and related illustration without a composer or network', () => {

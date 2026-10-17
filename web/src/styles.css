@@ -69,8 +69,8 @@ input[type=checkbox] { accent-color: var(--accent); }
 /* Homepage */
 .home { max-width: 1280px; margin: auto; padding: 0 44px; }
 .home-header { height: 88px; display: flex; align-items: center; justify-content: space-between; gap: 20px; }
-.home-header nav { display: flex; align-items: center; gap: 26px; color: var(--muted); font-size: 13px; }
-.home-header nav a:hover { color: white; }
+.home-about-link { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; padding: 8px 4px; background: transparent; color: var(--muted); font-size: 13px; }
+.home-about-link:hover { color: white; }
 .hero { position: relative; isolation: isolate; display: flex; align-items: center; min-height: 620px; margin: 28px 0 48px; padding: 56px 48px; border-radius: 26px; overflow: hidden; background: #1a1b1e; }
 .hero-copy { position: relative; z-index: 2; flex: 0 1 52%; min-width: 0; max-width: 540px; }
 .hero h1 { font-size: clamp(32px,3.9vw,52px); letter-spacing: -1.6px; line-height: 1.3; font-weight: 600; margin: 0 0 24px; }
@@ -87,7 +87,7 @@ input[type=checkbox] { accent-color: var(--accent); }
 .art-caption > span { color: #d6dce4; font-size: 12px; }
 .art-caption h2 { font-size: 22px; letter-spacing: -.5px; font-weight: 500; margin: 7px 0 0; }
 .art-caption > svg { position: absolute; bottom: 1px; right: 0; }
-.home-about { padding: 22px 0; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+.home-about { padding: 22px 0; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); scroll-margin-top: 24px; }
 summary { cursor: pointer; }
 .home-about summary { font-size: 14px; color: #bdbdc4; }
 .home-about p { max-width: 660px; font-size: 14px; color: var(--muted); margin: 18px 0 0; }
@@ -383,9 +383,7 @@ summary { cursor: pointer; }
   .home { padding: 0 24px; }
   .home-header { height: 76px; }
   .home-header .brand { font-size: 17px; }
-  .home-header .brand, .home-header .button.small { min-height: 44px; }
-  .home-header nav { gap: 15px; }
-  .home-header nav > a:first-child { display: none; }
+  .home-header .brand { min-height: 44px; }
   .hero { margin: 16px 0 30px; border-radius: 20px; }
   .hero-copy { padding: 32px 24px 8px; }
   .hero h1 { font-size: clamp(31px,7.8vw,43px); letter-spacing: -1px; }
